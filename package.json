@@ -1,0 +1,57 @@
+{
+  "name": "@gitcoffee/postbot-cli",
+  "version": "1.0.0",
+  "description": "PostBot & Postar CLI - Content publishing and task management tool",
+  "type": "module",
+  "bin": {
+    "postbot": "./bin/postbot.js",
+    "postar": "./bin/postar.js"
+  },
+  "main": "./dist/index.js",
+  "license": "Apache-2.0",
+  "author": "GitCoffee Team (https://gitcoffee.com)",
+  "homepage": "https://postbot.exmay.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gitcoffee-os/gitcoffee-os.git",
+    "directory": "apps/postbot-cli"
+  },
+  "bugs": {
+    "url": "https://github.com/gitcoffee-os/gitcoffee-os/issues"
+  },
+  "keywords": [
+    "postbot",
+    "postar",
+    "cli",
+    "content-publishing",
+    "social-media",
+    "workflow"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "postbot": "tsx src/index.ts --app postbot",
+    "postar": "tsx src/index.ts --app postar",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "@gitcoffee/postbot-sdk": "^1.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.1.0",
+    "conf": "^13.0.0",
+    "inquirer": "^9.2.0",
+    "ora": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
