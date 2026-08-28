@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig, getCurrentToken, getAppConfig, appName } from '../config.js';
 import { getUserInfo } from '@gitcoffee/postbot-sdk';
+import { classifyError, tokenHint } from '../errors.js';
 
 export async function whoami(opts: { app?: 'postbot' | 'postar' }) {
   const appKey = appName(opts.app);
@@ -29,7 +30,13 @@ export async function whoami(opts: { app?: 'postbot' | 'postar' }) {
     console.log(`  Mobile:   ${chalk.cyan(userInfo.phone_number || 'N/A')}`);
     console.log(chalk.gray('─'.repeat(40)));
   } catch (error: any) {
-    spinner.fail(chalk.red(`Failed to get user info: ${error.message}`));
-    console.log(chalk.yellow('Token may be expired. Run: postbot login'));
+    const { code } = classifyError(error);
+    const hint = tokenHint(error);
+    spinner.fail(chalk.red(`Failed to get user info: ${error.message}${code ? ` (${code})` : ''}`));
+    if (hint) {
+      console.log(chalk.yellow(hint));
+    } else {
+      console.log(chalk.yellow('Token may be expired. Run: postbot login'));
+    }
   }
 }

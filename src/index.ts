@@ -12,6 +12,7 @@ import { workflowStatus } from './workflow/status.js';
 import { workflowRetry } from './workflow/retry.js';
 import { taskList } from './task/list.js';
 import { taskGet } from './task/get.js';
+import { taskSave } from './task/save.js';
 import { platformList } from './platform/list.js';
 import { accountList } from './account/list.js';
 import { clientList } from './client/list.js';
@@ -81,7 +82,8 @@ program
   .description('Quick publish (one-click create + publish)')
   .option('--name <name>', 'Task name')
   .option('--type <type>', 'Content type (article|moment|video|audio)')
-  .option('--platform <code>', 'Platform code')
+  .option('--platform <code>', 'Platform code (single, deprecated, use --platforms)')
+  .option('--platforms <codes>', 'Comma-separated platform codes (multi-platform supported)')
   .option('--account <username>', 'Account username')
   .option('--content-file <path>', 'Content file path (JSON)')
   .option('--channel <channel>', 'Publish channel (CLOUD|BROWSER_EXTENSION|DESKTOP)')
@@ -129,6 +131,19 @@ taskCmd
   .command('get <taskId>')
   .description('Get task details')
   .action((taskId) => taskGet({ taskId, json: isJson(), app: getApp() }));
+
+taskCmd
+  .command('save')
+  .description('Save a task (supports multi-platform)')
+  .option('--name <name>', 'Task name')
+  .option('--type <type>', 'Content type (article|moment|video|audio)')
+  .option('--platforms <codes>', 'Comma-separated platform codes')
+  .option('--account <username>', 'Primary account username')
+  .option('--account-id <id>', 'Primary account ID (alternative to --account)')
+  .option('--content-file <path>', 'Content file path (JSON)')
+  .option('--channel <channel>', 'Publish channel (CLOUD|BROWSER_EXTENSION|DESKTOP)')
+  .option('--scheduled-at <datetime>', 'Scheduled publish time (ISO 8601)')
+  .action((opts) => taskSave({ ...opts, json: isJson(), app: getApp() }));
 
 // === Platform Commands ===
 program

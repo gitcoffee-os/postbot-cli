@@ -26,8 +26,8 @@ const CONFIG_FILE = join(CONFIG_DIR, 'config.json');
 
 const APP_CONFIGS = {
   postbot: {
-    baseUrl: process.env.POSTBOT_BASE_URL || 'https://postbot.exmay.com',
-    baseApi: process.env.POSTBOT_API_URL || 'https://postbot.exmay.com/exmay/authority/api',
+    baseUrl: process.env.POSTBOT_BASE_URL || 'https://api.exmay.com',
+    baseApi: process.env.POSTBOT_API_URL || 'https://api.exmay.com/exmay/authority/api',
     appId: process.env.POSTBOT_APP_ID || 'postbot-app',
     proxyAppId: process.env.POSTBOT_PROXY_APP_ID || 'postbot-app',
   },

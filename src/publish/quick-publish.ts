@@ -3,12 +3,14 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
 import { appName, createApiClient } from '../config.js';
-import { WorkflowApi, WorkflowExecutionResult, PlatformApi, Platform, AccountApi, Account } from '@gitcoffee/postbot-sdk';
+import { WorkflowApi, WorkflowExecutionResult, PlatformApi, Platform, AccountApi, Account, TaskApi } from '@gitcoffee/postbot-sdk';
+import { getContentTypeChoices, getPlatformChoices, validatePlatformCodes } from '../platform/registry.js';
 
 export async function quickPublish(opts: {
   name?: string;
   type?: string;
   platform?: string;
+  platforms?: string;
   account?: string;
   contentFile?: string;
   channel?: string;
@@ -19,18 +21,18 @@ export async function quickPublish(opts: {
   const client = createApiClient(appKey);
   const workflowApi = new WorkflowApi(client);
 
-  let { name, type, platform, account, contentFile, channel, scheduledAt } = opts;
+  let { name, type, platform, platforms, account, contentFile, channel, scheduledAt } = opts;
 
-  if (!name || !type || !platform || !account) {
+  if (!name || !type || (!platform && !platforms) || !account) {
     const platformApi = new PlatformApi(client);
     const accountApi = new AccountApi(client);
 
-    let platforms: Platform[] = [];
-    let accounts: Account[] = [];
+    let platformList: Platform[] = [];
+    let accountList: Account[] = [];
 
     const spinner = ora('Loading platforms and accounts...').start();
     try {
-      [platforms, accounts] = await Promise.all([platformApi.list(), accountApi.list()]);
+      [platformList, accountList] = await Promise.all([platformApi.list(), accountApi.list()]);
       spinner.stop();
     } catch (error: any) {
       spinner.fail(chalk.red(`Failed to load data: ${error.message}`));
@@ -48,21 +50,24 @@ export async function quickPublish(opts: {
         type: 'list',
         name: 'type',
         message: 'Content type:',
-        choices: ['article', 'moment', 'video', 'audio'],
+        choices: getContentTypeChoices(),
         when: !type,
       },
       {
-        type: 'list',
-        name: 'platform',
-        message: 'Platform:',
-        choices: platforms.map(p => ({ name: `${p.name} (${p.code})`, value: p.code })),
-        when: !platform,
+        type: 'checkbox',
+        name: 'platforms',
+        message: 'Select target platforms:',
+        choices(answers: any) {
+          return getPlatformChoices(answers.type || type);
+        },
+        validate: (value: string[]) => value.length > 0 || 'Please select at least one platform',
+        when: !platform && !platforms,
       },
       {
         type: 'list',
         name: 'account',
         message: 'Account:',
-        choices: accounts.map(a => ({ name: `${a.username} (${a.name || 'N/A'})`, value: a.username })),
+        choices: accountList.map(a => ({ name: `${a.username} (${a.name || 'N/A'})`, value: a.username })),
         when: !account,
       },
       {
@@ -73,13 +78,37 @@ export async function quickPublish(opts: {
         default: 'CLOUD',
         when: !channel,
       },
-    ]);
+    ] as any);
 
     name = name || answers.name;
     type = type || answers.type;
-    platform = platform || answers.platform;
+    platforms = platforms || answers.platforms?.join(',');
     account = account || answers.account;
     channel = channel || answers.channel;
+  }
+
+  const selectedPlatforms = (platforms || platform || '')
+    .split(',')
+    .map(c => c.trim())
+    .filter(Boolean);
+
+  if (selectedPlatforms.length === 0) {
+    console.log(chalk.red('At least one platform is required'));
+    process.exit(1);
+  }
+
+  const { valid, invalid, unsupported } = validatePlatformCodes(selectedPlatforms, type as any);
+  if (invalid.length > 0) {
+    console.log(chalk.red(`Invalid platform codes: ${invalid.join(', ')}`));
+    process.exit(1);
+  }
+  if (unsupported.length > 0) {
+    console.log(chalk.red(`Platform codes not supported for type '${type}': ${unsupported.join(', ')}`));
+    process.exit(1);
+  }
+  if (valid.length === 0) {
+    console.log(chalk.red('No valid platform codes provided'));
+    process.exit(1);
   }
 
   if (!contentFile) {
@@ -103,39 +132,129 @@ export async function quickPublish(opts: {
   const spinner = ora('Publishing...').start();
 
   try {
-    const result = await workflowApi.executeWorkflow('QUICK_PUBLISH', {
-      name,
-      type,
-      platformCode: platform,
-      accountUsername: account,
-      publishChannel: channel || 'CLOUD',
-      content,
-      scheduledAt,
-    });
+    let result: WorkflowExecutionResult;
 
-    spinner.succeed(chalk.green('Publish workflow executed!'));
+    if (selectedPlatforms.length === 1) {
+      // 单平台：继续走工作流，保持原有行为
+      result = await workflowApi.executeWorkflow('QUICK_PUBLISH', {
+        name,
+        type,
+        platformCode: selectedPlatforms[0],
+        accountUsername: account,
+        publishChannel: channel || 'CLOUD',
+        content,
+        scheduledAt,
+      });
 
-    console.log(chalk.bold('\nResult:'));
-    console.log(chalk.gray('─'.repeat(50)));
-    console.log(`  Execution ID: ${chalk.cyan(result.executionId)}`);
-    console.log(`  Status:       ${chalk.yellow(result.status)}`);
-    if (result.result?.taskId) {
-      console.log(`  Task ID:      ${chalk.cyan(result.result.taskId)}`);
-    }
-    if (result.result?.jobId) {
-      console.log(`  Job ID:       ${chalk.cyan(result.result.jobId)}`);
-    }
-    console.log(chalk.gray('─'.repeat(50)));
+      spinner.succeed(chalk.green('Publish workflow executed!'));
+      printWorkflowResult(result);
+    } else {
+      // 多平台：直接保存任务，由后端自动发布
+      result = await saveMultiPlatformTask(client, {
+        name: name!,
+        type: type!,
+        platformCodes: selectedPlatforms,
+        accountUsername: account!,
+        publishChannel: channel || 'CLOUD',
+        content,
+        scheduledAt,
+      });
 
-    if (result.steps) {
-      console.log(chalk.bold('\nSteps:'));
-      for (const step of result.steps) {
-        const icon = step.status === 'SUCCESS' ? chalk.green('✓') : step.status === 'FAILED' ? chalk.red('✗') : chalk.yellow('○');
-        console.log(`  ${icon} ${step.stepName}: ${step.message}`);
-      }
+      spinner.succeed(chalk.green('Multi-platform task saved!'));
+      printMultiPlatformResult(result);
     }
   } catch (error: any) {
     spinner.fail(chalk.red(`Publish failed: ${error.message}`));
     process.exit(1);
   }
+}
+
+async function saveMultiPlatformTask(
+  client: any,
+  opts: {
+    name: string;
+    type: string;
+    platformCodes: string[];
+    accountUsername: string;
+    publishChannel: string;
+    content: any;
+    scheduledAt?: string;
+  }
+): Promise<WorkflowExecutionResult> {
+  const accountApi = new AccountApi(client);
+  const platformApi = new PlatformApi(client);
+
+  const [accountList, platformList] = await Promise.all([
+    accountApi.list(),
+    platformApi.list(),
+  ]);
+
+  const account = accountList.find(a => a.username === opts.accountUsername);
+  if (!account) {
+    throw new Error(`Account not found: ${opts.accountUsername}`);
+  }
+
+  const primaryPlatform = platformList.find(p => p.code === opts.platformCodes[0]);
+
+  const data = {
+    ...opts.content,
+    platformCodes: opts.platformCodes,
+    onlineTime: opts.scheduledAt || opts.content.onlineTime || '',
+  };
+
+  const taskApi = new TaskApi(client);
+  const task = await taskApi.create({
+    name: opts.name,
+    type: opts.type,
+    data: JSON.stringify(data),
+    isAutoPublish: true,
+    maxRetryCount: 0,
+    mediaAccountId: account.id,
+    publishChannel: opts.publishChannel,
+    ...(primaryPlatform ? { mediaPlatformId: primaryPlatform.id } : {}),
+  });
+
+  return {
+    executionId: '',
+    workflowType: 'DIRECT_SAVE',
+    status: 'SUCCESS',
+    result: {
+      taskId: task.id,
+      platformCount: opts.platformCodes.length,
+      platformCodes: opts.platformCodes,
+    },
+    steps: [],
+  };
+}
+
+function printWorkflowResult(result: WorkflowExecutionResult) {
+  console.log(chalk.bold('\nResult:'));
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log(`  Execution ID: ${chalk.cyan(result.executionId)}`);
+  console.log(`  Status:       ${chalk.yellow(result.status)}`);
+  if (result.result?.taskId) {
+    console.log(`  Task ID:      ${chalk.cyan(result.result.taskId)}`);
+  }
+  if (result.result?.jobId) {
+    console.log(`  Job ID:       ${chalk.cyan(result.result.jobId)}`);
+  }
+  console.log(chalk.gray('─'.repeat(50)));
+
+  if (result.steps) {
+    console.log(chalk.bold('\nSteps:'));
+    for (const step of result.steps) {
+      const icon = step.status === 'SUCCESS' ? chalk.green('✓') : step.status === 'FAILED' ? chalk.red('✗') : chalk.yellow('○');
+      console.log(`  ${icon} ${step.stepName}: ${step.message}`);
+    }
+  }
+}
+
+function printMultiPlatformResult(result: WorkflowExecutionResult) {
+  console.log(chalk.bold('\nResult:'));
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log(`  Task ID:       ${chalk.cyan(result.result.taskId)}`);
+  console.log(`  Platforms:     ${chalk.cyan(result.result.platformCount)}`);
+  console.log(`  PlatformCodes: ${chalk.cyan(result.result.platformCodes.join(', '))}`);
+  console.log(`  Status:        ${chalk.yellow(result.status)}`);
+  console.log(chalk.gray('─'.repeat(50)));
 }

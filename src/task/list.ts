@@ -26,20 +26,32 @@ export async function taskList(opts: {
     }
 
     console.log(chalk.bold(`\nTasks (Page ${result.current}/${result.pages}, Total: ${result.total}):`));
-    console.log(chalk.gray('─'.repeat(80)));
-    console.log(chalk.bold('  ID    | Name                          | Type     | Status    | Channel'));
-    console.log(chalk.gray('─'.repeat(80)));
+    console.log(chalk.gray('─'.repeat(90)));
+    console.log(chalk.bold('  ID    | Name                          | Platforms | Type     | Status    | Channel'));
+    console.log(chalk.gray('─'.repeat(90)));
 
     for (const task of result.list) {
       const id = String(task.id).padEnd(6);
       const name = (task.name || 'N/A').substring(0, 29).padEnd(30);
+      let platformCount = '1';
+      if (task.platformCodes) {
+        try {
+          const codes = JSON.parse(task.platformCodes);
+          if (Array.isArray(codes)) {
+            platformCount = String(codes.length);
+          }
+        } catch {
+          platformCount = '?';
+        }
+      }
+      const platforms = platformCount.padEnd(10);
       const type = (task.type || 'N/A').padEnd(9);
       const status = (task.status || 'N/A').padEnd(10);
       const channel = task.publishChannel || 'N/A';
-      console.log(`  ${id}| ${name}| ${type}| ${status}| ${channel}`);
+      console.log(`  ${id}| ${name}| ${platforms}| ${type}| ${status}| ${channel}`);
     }
 
-    console.log(chalk.gray('─'.repeat(80)));
+    console.log(chalk.gray('─'.repeat(90)));
   } catch (error: any) {
     console.log(chalk.red(`Failed to list tasks: ${error.message}`));
     process.exit(1);

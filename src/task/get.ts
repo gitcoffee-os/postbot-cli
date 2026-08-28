@@ -24,12 +24,24 @@ export async function taskGet(opts: {
       return;
     }
 
+    let platformDisplay = String(task.mediaPlatformId || 'N/A');
+    if (task.platformCodes) {
+      try {
+        const codes = JSON.parse(task.platformCodes);
+        if (Array.isArray(codes) && codes.length > 0) {
+          platformDisplay = `${codes.length} platform(s): ${codes.join(', ')}`;
+        }
+      } catch {
+        platformDisplay = task.platformCodes;
+      }
+    }
+
     console.log(chalk.bold('\nTask Detail:'));
     console.log(chalk.gray('─'.repeat(50)));
     console.log(`  ID:        ${chalk.cyan(task.id)}`);
     console.log(`  Name:      ${chalk.cyan(task.name)}`);
     console.log(`  Type:      ${chalk.cyan(task.type)}`);
-    console.log(`  Platform:  ${chalk.cyan(task.mediaPlatformId)}`);
+    console.log(`  Platforms: ${chalk.cyan(platformDisplay)}`);
     console.log(`  Account:   ${chalk.cyan(task.mediaAccountId)}`);
     console.log(`  Channel:   ${chalk.cyan(task.publishChannel || 'N/A')}`);
     console.log(`  Status:    ${chalk.yellow(task.status)}`);

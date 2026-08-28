@@ -3,6 +3,15 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { getConfig, setCurrentToken, getAppConfig, appName } from '../config.js';
 import { getAppToken, proxyLogin, proxyRegister, directLogin } from '@gitcoffee/postbot-sdk';
+import { classifyError, tokenHint } from '../errors.js';
+
+/** 判断是否「用户不存在」（后端未来以 USER_NOT_FOUND 业务码区分；当前兼容中文消息） */
+function isUserNotFound(error: unknown): boolean {
+  const { code, message } = classifyError(error);
+  if (code === 'USER_NOT_FOUND') return true;
+  // 注意：不能匹配「用户名或密码错误」——该文案同时表示密码错误，误判会导致错误密码被静默注册新账号
+  return message.includes('用户不存在') || message.includes('does not exist');
+}
 
 export async function login(opts: { username?: string; password?: string; app?: 'postbot' | 'postar' }) {
   const config = getConfig();
@@ -61,12 +70,7 @@ export async function login(opts: { username?: string; password?: string; app?: 
         setCurrentToken(result.token, result.username, result.expiresIn, appKey);
         spinner.succeed(chalk.green(`Logged in as ${result.username} (${appKey})`));
       } catch (loginError: any) {
-        const msg = loginError.message || '';
-        const isUserNotFound = msg.includes('用户不存在') ||
-          msg.includes('用户名或密码错误') ||
-          msg.includes('does not exist');
-
-        if (isUserNotFound) {
+        if (isUserNotFound(loginError)) {
           spinner.text = 'User not found, registering...';
           try {
             const registerResult = await proxyRegister({
@@ -81,7 +85,8 @@ export async function login(opts: { username?: string; password?: string; app?: 
             setCurrentToken(registerResult.token, registerResult.username, registerResult.expiresIn, appKey);
             spinner.succeed(chalk.green(`Account created and logged in as ${registerResult.username} (${appKey})`));
           } catch (registerError: any) {
-            spinner.fail(chalk.red(`Registration failed: ${registerError.message}`));
+            const hint = tokenHint(registerError);
+            spinner.fail(chalk.red(`Registration failed: ${registerError.message}${hint ? ` (${hint})` : ''}`));
             process.exit(1);
           }
         } else {
@@ -97,7 +102,8 @@ export async function login(opts: { username?: string; password?: string; app?: 
       spinner.succeed(chalk.green(`Logged in as ${username} (${appKey})`));
     }
   } catch (error: any) {
-    spinner.fail(chalk.red(`Login failed: ${error.message}`));
+    const hint = tokenHint(error);
+    spinner.fail(chalk.red(`Login failed: ${error.message}${hint ? ` (${hint})` : ''}`));
     process.exit(1);
   }
 }
