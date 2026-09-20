@@ -1,7 +1,7 @@
 <p align="center">
   <img alt="logo" src="https://postbot.exmay.com/docs/images/postbot_logo.svg" width="150" height="150">
 </p>
-<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PostBot CLI v1.0.0</h1>
+<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PostBot CLI v1.0.1</h1>
 
 <h4 align="center">
   一款命令行下的多平台内容同步、任务流程管理效率工具。

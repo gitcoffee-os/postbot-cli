@@ -15,6 +15,7 @@ interface BatchTaskInput {
   content: Record<string, any>;
   publishChannel?: string;
   scheduledAt?: string;
+  maxRetryCount?: number;
 }
 
 export async function batchPublish(opts: {
@@ -135,14 +136,19 @@ async function buildTaskPayload(
     onlineTime: task.scheduledAt || task.content?.onlineTime || '',
   };
 
-  return {
+  const payload: Record<string, any> = {
     name: task.name,
     type: task.type || 'article',
     data: JSON.stringify(data),
     isAutoPublish: true,
-    maxRetryCount: 0,
     mediaAccountId: accountId,
     publishChannel: task.publishChannel || defaultChannel || 'CLOUD',
     ...(primaryPlatform ? { mediaPlatformId: primaryPlatform.id } : {}),
   };
+
+  if (task.maxRetryCount !== undefined) {
+    payload.maxRetryCount = task.maxRetryCount;
+  }
+
+  return payload;
 }

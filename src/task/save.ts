@@ -15,6 +15,7 @@ export interface SaveTaskOptions {
   contentFile?: string;
   channel?: string;
   scheduledAt?: string;
+  maxRetries?: string | number;
   json?: boolean;
   app?: 'postbot' | 'postar';
 }
@@ -24,7 +25,7 @@ export async function taskSave(opts: SaveTaskOptions) {
   const client = createApiClient(appKey);
   const taskApi = new TaskApi(client);
 
-  let { name, type, platforms, account, accountId, contentFile, channel, scheduledAt } = opts;
+  let { name, type, platforms, account, accountId, contentFile, channel, scheduledAt, maxRetries } = opts;
 
   const spinner = ora('Loading platforms and accounts...').start();
   let platformList: Platform[] = [];
@@ -159,13 +160,16 @@ export async function taskSave(opts: SaveTaskOptions) {
     type: type!,
     data: JSON.stringify(data),
     isAutoPublish: true,
-    maxRetryCount: 0,
     mediaAccountId: selectedAccount.id,
     publishChannel: channel || 'CLOUD',
   };
 
   if (primaryPlatform) {
     payload.mediaPlatformId = primaryPlatform.id;
+  }
+
+  if (maxRetries !== undefined) {
+    payload.maxRetryCount = Number(maxRetries);
   }
 
   const saveSpinner = ora('Saving task...').start();

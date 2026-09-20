@@ -10,9 +10,16 @@ import { batchPublish } from './publish/batch-publish.js';
 import { taskStatus } from './status/task-status.js';
 import { workflowStatus } from './workflow/status.js';
 import { workflowRetry } from './workflow/retry.js';
+import { workflowList } from './workflow/list.js';
 import { taskList } from './task/list.js';
 import { taskGet } from './task/get.js';
 import { taskSave } from './task/save.js';
+import { taskUpdate } from './task/update.js';
+import { taskDelete } from './task/delete.js';
+import { taskBatchDelete } from './task/batch-delete.js';
+import { autopublishTrigger } from './autopublish/trigger.js';
+import { autopublishStatus } from './autopublish/status.js';
+import { autopublishLog } from './autopublish/log.js';
 import { platformList } from './platform/list.js';
 import { accountList } from './account/list.js';
 import { clientList } from './client/list.js';
@@ -23,7 +30,7 @@ const program = new Command();
 
 program
   .name('postbot')
-  .description('PostBot & Postar CLI - Content publishing and task management')
+  .description('PostBot CLI - Content publishing and task management')
   .version('0.1.0')
   .option('--app <app>', 'Application mode (postbot|postar)', 'postbot')
   .option('--json', 'Output in JSON format')
@@ -88,6 +95,7 @@ program
   .option('--content-file <path>', 'Content file path (JSON)')
   .option('--channel <channel>', 'Publish channel (CLOUD|BROWSER_EXTENSION|DESKTOP)')
   .option('--scheduled-at <datetime>', 'Scheduled publish time')
+  .option('--max-retries <count>', 'Max retry count for auto-publish (omit to use engine default)')
   .action((opts) => quickPublish({ ...opts, app: getApp() }));
 
 program
@@ -101,10 +109,15 @@ program
 program
   .command('status <taskId>')
   .description('Query task publish status')
-  .action((taskId) => taskStatus({ taskId, app: getApp() }));
+  .action((taskId) => taskStatus({ taskId, app: getApp(), json: isJson() }));
 
 // === Workflow Commands ===
 const workflowCmd = program.command('workflow').description('Workflow management');
+
+workflowCmd
+  .command('list')
+  .description('List available workflow types')
+  .action(() => workflowList({ json: isJson(), app: getApp() }));
 
 workflowCmd
   .command('status <executionId>')
@@ -143,7 +156,48 @@ taskCmd
   .option('--content-file <path>', 'Content file path (JSON)')
   .option('--channel <channel>', 'Publish channel (CLOUD|BROWSER_EXTENSION|DESKTOP)')
   .option('--scheduled-at <datetime>', 'Scheduled publish time (ISO 8601)')
+  .option('--max-retries <count>', 'Max retry count for auto-publish (omit to use engine default)')
   .action((opts) => taskSave({ ...opts, json: isJson(), app: getApp() }));
+
+taskCmd
+  .command('update <taskId>')
+  .description('Update an existing task')
+  .option('--name <name>', 'New task name')
+  .option('--status <status>', 'New status')
+  .option('--scheduled-at <datetime>', 'New scheduled publish time')
+  .option('--max-retries <count>', 'Max retry count')
+  .action((taskId, opts) => taskUpdate({ ...opts, taskId, json: isJson(), app: getApp() }));
+
+taskCmd
+  .command('delete <taskId>')
+  .description('Delete a task')
+  .option('-f, --force', 'Skip confirmation')
+  .action((taskId, opts) => taskDelete({ ...opts, taskId, json: isJson(), app: getApp() }));
+
+taskCmd
+  .command('batch-delete')
+  .description('Batch delete tasks (comma-separated IDs)')
+  .requiredOption('--ids <ids>', 'Comma-separated task IDs')
+  .option('-f, --force', 'Skip confirmation')
+  .action((opts) => taskBatchDelete({ ...opts, json: isJson(), app: getApp() }));
+
+// === Auto-Publish Commands ===
+const autopublishCmd = program.command('autopublish').description('Auto-publish management');
+
+autopublishCmd
+  .command('trigger <taskId>')
+  .description('Manually trigger auto-publish for a task')
+  .action((taskId) => autopublishTrigger({ taskId, app: getApp() }));
+
+autopublishCmd
+  .command('status <taskId>')
+  .description('Query latest publish status for a task')
+  .action((taskId) => autopublishStatus({ taskId, json: isJson(), app: getApp() }));
+
+autopublishCmd
+  .command('log')
+  .description('List auto-publish execution logs')
+  .action(() => autopublishLog({ json: isJson(), app: getApp() }));
 
 // === Platform Commands ===
 program

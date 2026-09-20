@@ -15,6 +15,7 @@ export async function quickPublish(opts: {
   contentFile?: string;
   channel?: string;
   scheduledAt?: string;
+  maxRetries?: string | number;
   app?: 'postbot' | 'postar';
 }) {
   const appKey = appName(opts.app);
@@ -158,6 +159,7 @@ export async function quickPublish(opts: {
         publishChannel: channel || 'CLOUD',
         content,
         scheduledAt,
+        maxRetries: opts.maxRetries,
       });
 
       spinner.succeed(chalk.green('Multi-platform task saved!'));
@@ -179,6 +181,7 @@ async function saveMultiPlatformTask(
     publishChannel: string;
     content: any;
     scheduledAt?: string;
+    maxRetries?: string | number;
   }
 ): Promise<WorkflowExecutionResult> {
   const accountApi = new AccountApi(client);
@@ -203,16 +206,19 @@ async function saveMultiPlatformTask(
   };
 
   const taskApi = new TaskApi(client);
-  const task = await taskApi.create({
+  const createPayload: Record<string, any> = {
     name: opts.name,
     type: opts.type,
     data: JSON.stringify(data),
     isAutoPublish: true,
-    maxRetryCount: 0,
     mediaAccountId: account.id,
     publishChannel: opts.publishChannel,
     ...(primaryPlatform ? { mediaPlatformId: primaryPlatform.id } : {}),
-  });
+  };
+  if (opts.maxRetries !== undefined) {
+    createPayload.maxRetryCount = Number(opts.maxRetries);
+  }
+  const task = await taskApi.create(createPayload);
 
   return {
     executionId: '',
@@ -237,6 +243,12 @@ function printWorkflowResult(result: WorkflowExecutionResult) {
   }
   if (result.result?.jobId) {
     console.log(`  Job ID:       ${chalk.cyan(result.result.jobId)}`);
+  }
+  if (result.result?.publishedUrl) {
+    console.log(`  Published URL:${chalk.cyan(result.result.publishedUrl)}`);
+  }
+  if (result.result?.contentUrl) {
+    console.log(`  Content URL:  ${chalk.cyan(result.result.contentUrl)}`);
   }
   console.log(chalk.gray('─'.repeat(50)));
 
