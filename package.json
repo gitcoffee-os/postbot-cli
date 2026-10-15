@@ -1,6 +1,6 @@
 {
   "name": "@gitcoffee/postbot-cli",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "PostBot & Postar CLI - Content publishing and task management tool",
   "type": "module",
   "bin": {
