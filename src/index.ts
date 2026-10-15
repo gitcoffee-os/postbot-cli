@@ -155,6 +155,7 @@ taskCmd
   .option('--account-id <id>', 'Primary account ID (alternative to --account)')
   .option('--content-file <path>', 'Content file path (JSON)')
   .option('--channel <channel>', 'Publish channel (CLOUD|BROWSER_EXTENSION|DESKTOP)')
+  .option('--client <client>', 'Target media client for binding (id|name|clientKey); DESKTOP auto-resolves the online desktop client if omitted')
   .option('--scheduled-at <datetime>', 'Scheduled publish time (ISO 8601)')
   .option('--max-retries <count>', 'Max retry count for auto-publish (omit to use engine default)')
   .action((opts) => taskSave({ ...opts, json: isJson(), app: getApp() }));
@@ -197,7 +198,8 @@ autopublishCmd
 autopublishCmd
   .command('log')
   .description('List auto-publish execution logs')
-  .action(() => autopublishLog({ json: isJson(), app: getApp() }));
+  .option('--task <taskId>', 'Filter logs by task ID (detail view with errorMsg)')
+  .action((opts) => autopublishLog({ ...opts, json: isJson(), app: getApp() }));
 
 // === Platform Commands ===
 program

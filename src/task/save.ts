@@ -3,7 +3,16 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
 import { appName, createApiClient } from '../config.js';
-import { TaskApi, PlatformApi, Platform, AccountApi, Account } from '@gitcoffee/postbot-sdk';
+import {
+  TaskApi,
+  PlatformApi,
+  Platform,
+  AccountApi,
+  Account,
+  ClientApi,
+  MediaClient,
+  PostbotClient,
+} from '@gitcoffee/postbot-sdk';
 import { getContentTypeChoices, getPlatformChoices, validatePlatformCodes } from '../platform/registry.js';
 
 export interface SaveTaskOptions {
@@ -14,10 +23,97 @@ export interface SaveTaskOptions {
   accountId?: string;
   contentFile?: string;
   channel?: string;
+  /** 目标媒体客户端（id|name|clientKey）。DESKTOP 通道省略时自动解析在线桌面客户端 */
+  client?: string;
   scheduledAt?: string;
   maxRetries?: string | number;
   json?: boolean;
   app?: 'postbot' | 'postar';
+}
+
+/**
+ * 在线判定窗口：引擎 clientHeartbeatTimeoutSeconds=90s，加一个心跳间隔余量取 120s。
+ * 引擎不提供 online 布尔字段，只能按 lastOnlineAt 新鲜度推断。
+ */
+const CLIENT_ONLINE_WINDOW_MS = 120_000;
+
+function isClientOnline(c: MediaClient): boolean {
+  if (!c.lastOnlineAt) return false;
+  const t = new Date(c.lastOnlineAt).getTime();
+  return Number.isFinite(t) && Date.now() - t < CLIENT_ONLINE_WINDOW_MS;
+}
+
+function describeClient(c: MediaClient): string {
+  return `#${c.id} ${c.name} (${c.type}${isClientOnline(c) ? ', online' : ''})`;
+}
+
+/**
+ * 解析任务绑定的 mediaClientId。
+ *
+ * - 显式 --client：按 id / name / clientKey 匹配（离线也允许，任务会等客户端上线后执行）；
+ * - DESKTOP 通道缺省：引擎硬性要求 mediaClientId 非空——为空时 Job 编排被**静默跳过**
+ *   （任务保存成功但不产生任何 Job），故自动解析在线 desktop 客户端，解析不到直接报错；
+ * - 其余通道：无需绑定，返回 undefined。
+ *
+ * D3 归属校验：Job 按 task.userId 路由给同一账号的客户端认领，
+ * 因此桌面端必须与 CLI 登录同一账号，否则任务永远停在 PENDING。
+ */
+async function resolveMediaClientId(
+  apiClient: PostbotClient,
+  channel: string | undefined,
+  explicit?: string,
+): Promise<number | undefined> {
+  // 无需绑定的通道：直接跳过（避免多余的 client 列表请求）
+  if (!explicit && channel !== 'DESKTOP') return undefined;
+
+  const clientApi = new ClientApi(apiClient);
+  let clients: MediaClient[];
+  try {
+    clients = await clientApi.list();
+  } catch (error: any) {
+    console.log(chalk.red(`Failed to list media clients: ${error.message}`));
+    process.exit(1);
+  }
+
+  if (explicit) {
+    const found = clients.find(
+      (c) => String(c.id) === String(explicit) || c.name === explicit || c.clientKey === explicit,
+    );
+    if (!found) {
+      console.log(chalk.red(`Client not found: ${explicit}`));
+      console.log(chalk.gray(`Available: ${clients.map(describeClient).join('; ') || 'none'}`));
+      process.exit(1);
+    }
+    return found.id;
+  }
+
+  const onlineDesktops = clients.filter(
+    (c) => String(c.type || '').toLowerCase() === 'desktop' && isClientOnline(c),
+  );
+  if (onlineDesktops.length === 0) {
+    console.log(chalk.red('No online desktop client under this account.'));
+    console.log(
+      chalk.gray(
+        'D3 归属校验：桌面端必须与 CLI 登录同一账号（否则 Job 永远不会被认领）。' +
+          '请确认桌面端已登录并心跳，或用 --client <id|name|key> 显式指定。',
+      ),
+    );
+    if (clients.length > 0) {
+      console.log(chalk.gray(`Known clients: ${clients.map(describeClient).join('; ')}`));
+    }
+    process.exit(1);
+  }
+  if (onlineDesktops.length === 1) return onlineDesktops[0].id;
+
+  const { picked } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'picked',
+      message: 'Multiple online desktop clients — select target:',
+      choices: onlineDesktops.map((c) => ({ name: describeClient(c), value: c.id })),
+    },
+  ]);
+  return picked;
 }
 
 export async function taskSave(opts: SaveTaskOptions) {
@@ -155,6 +251,9 @@ export async function taskSave(opts: SaveTaskOptions) {
     onlineTime: scheduledAt || content.onlineTime || '',
   };
 
+  // DESKTOP 通道必须绑定 mediaClientId（引擎据此跳过校验；缺省会静默不编排 Job）
+  const mediaClientId = await resolveMediaClientId(client, channel, opts.client);
+
   const payload: Record<string, any> = {
     name: name!,
     type: type!,
@@ -163,6 +262,10 @@ export async function taskSave(opts: SaveTaskOptions) {
     mediaAccountId: selectedAccount.id,
     publishChannel: channel || 'CLOUD',
   };
+
+  if (mediaClientId !== undefined) {
+    payload.mediaClientId = mediaClientId;
+  }
 
   if (primaryPlatform) {
     payload.mediaPlatformId = primaryPlatform.id;
@@ -190,6 +293,9 @@ export async function taskSave(opts: SaveTaskOptions) {
     console.log(`  Platforms:     ${chalk.cyan(platformCodes.join(', '))}`);
     console.log(`  Primary Acc:   ${chalk.cyan(task.mediaAccountId)}`);
     console.log(`  Channel:       ${chalk.cyan(task.publishChannel || 'N/A')}`);
+    if (mediaClientId !== undefined) {
+      console.log(`  Client:        ${chalk.cyan(mediaClientId)}`);
+    }
     console.log(`  Status:        ${chalk.yellow(task.status)}`);
     console.log(`  Auto Publish:  ${task.isAutoPublish ? 'Yes' : 'No'}`);
     console.log(chalk.gray('─'.repeat(50)));

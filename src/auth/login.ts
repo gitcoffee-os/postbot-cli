@@ -5,12 +5,17 @@ import { getConfig, setCurrentToken, getAppConfig, appName } from '../config.js'
 import { getAppToken, proxyLogin, proxyRegister, directLogin } from '@gitcoffee/postbot-sdk';
 import { classifyError, tokenHint } from '../errors.js';
 
-/** 判断是否「用户不存在」（后端未来以 USER_NOT_FOUND 业务码区分；当前兼容中文消息） */
+/** 判断是否「用户不存在」（后端未来以 USER_NOT_FOUND 业务码区分；当前兼容中英文消息） */
 function isUserNotFound(error: unknown): boolean {
   const { code, message } = classifyError(error);
   if (code === 'USER_NOT_FOUND') return true;
   // 注意：不能匹配「用户名或密码错误」——该文案同时表示密码错误，误判会导致错误密码被静默注册新账号
-  return message.includes('用户不存在') || message.includes('does not exist');
+  return (
+    message.includes('用户不存在') ||
+    message.includes('does not exist') ||
+    // IAM 实际返回：`Account loginName not found: <phone>`（明确的「账号不存在」，非密码错误）
+    /loginName not found/i.test(message)
+  );
 }
 
 export async function login(opts: { username?: string; password?: string; app?: 'postbot' | 'postar' }) {

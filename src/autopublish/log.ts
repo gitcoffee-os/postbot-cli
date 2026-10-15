@@ -3,6 +3,7 @@ import { appName, createApiClient } from '../config.js';
 import { AutoPublishApi } from '@gitcoffee/postbot-sdk';
 
 export async function autopublishLog(opts: {
+  taskId?: string;
   json?: boolean;
   app?: 'postbot' | 'postar';
 }) {
@@ -11,10 +12,32 @@ export async function autopublishLog(opts: {
   const api = new AutoPublishApi(client);
 
   try {
-    const logs = await api.listLogs();
+    let logs = await api.listLogs();
+    const filtered = opts.taskId
+      ? logs.filter((l) => String(l.taskId) === String(opts.taskId))
+      : null;
 
     if (opts.json) {
-      console.log(JSON.stringify(logs, null, 2));
+      console.log(JSON.stringify(filtered ?? logs, null, 2));
+      return;
+    }
+
+    logs = filtered ?? logs;
+
+    if (filtered) {
+      // 按任务过滤时走明细视图：直接展示每条执行的错误信息（定位失败原因无需再查接口）
+      console.log(chalk.bold(`\nAuto-Publish Logs for Task ${opts.taskId} (${logs.length} entries):`));
+      for (const log of logs) {
+        console.log(chalk.gray('─'.repeat(90)));
+        console.log(
+          `  Log #${log.id} | ${log.platformCode || 'N/A'} | ${chalk.yellow(log.status || 'N/A')} | worker: ${log.workerNode || 'N/A'}`,
+        );
+        console.log(`  Started: ${log.startedAt || 'N/A'}${log.finishedAt ? ` → ${log.finishedAt}` : ''}`);
+        if (log.errorMsg) {
+          console.log(`  Error:   ${chalk.red(log.errorMsg)}`);
+        }
+      }
+      console.log(chalk.gray('─'.repeat(90)));
       return;
     }
 
