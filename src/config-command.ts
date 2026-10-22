@@ -1,41 +1,88 @@
-import chalk from 'chalk';
-import { getConfig, saveConfig } from './config.js';
+import { getConfig, getConfigPath, saveConfig, setDefaultApp } from './config.js';
+import { isAppName } from './constants.js';
+import type { GlobalOptions } from './cli.js';
+import { printHeading, printJson, printKeyValues, printSuccess, printWarning } from './output.js';
 
-export async function configCommand(opts: {
+export interface ConfigCommandOptions {
   clientId?: string;
   clientSecret?: string;
   iamBaseUrl?: string;
+  defaultApp?: string;
   show?: boolean;
-}) {
-  if (opts.show || (!opts.clientId && !opts.clientSecret && !opts.iamBaseUrl)) {
+  showSecret?: boolean;
+}
+
+export async function configCommand(
+  opts: ConfigCommandOptions,
+  global: GlobalOptions,
+): Promise<void> {
+  const hasUpdate =
+    opts.clientId !== undefined ||
+    opts.clientSecret !== undefined ||
+    opts.iamBaseUrl !== undefined ||
+    opts.defaultApp !== undefined;
+
+  if (!hasUpdate || opts.show) {
     const config = getConfig();
-    console.log(chalk.bold('\nCurrent Configuration:'));
-    console.log(chalk.gray('─'.repeat(50)));
-    console.log(`  IAM Base URL:    ${chalk.cyan(config.developer.iamBaseUrl || '(not set)')}`);
-    console.log(`  Client ID:       ${chalk.cyan(config.developer.clientId || '(not set)')}`);
-    console.log(`  Client Secret:   ${chalk.cyan(config.developer.clientSecret ? '••••••••' : '(not set)')}`);
-    console.log(`  Proxy App ID:    ${chalk.cyan(config.developer.proxyAppId || '(not set)')}`);
-    console.log(chalk.gray('─'.repeat(50)));
+    if (global.json) {
+      printJson({
+        path: getConfigPath(),
+        currentApp: config.currentApp,
+        iamBaseUrl: config.developer.iamBaseUrl,
+        clientId: config.developer.clientId,
+        clientSecret: opts.showSecret
+          ? config.developer.clientSecret
+          : config.developer.clientSecret
+            ? '••••••••'
+            : '',
+        accounts: Object.fromEntries(
+          Object.entries(config.accounts).map(([app, account]) => [
+            app,
+            { username: account.username, expiresAt: account.expiresAt, baseUrl: account.baseUrl },
+          ]),
+        ),
+      });
+      return;
+    }
+
+    printHeading('当前配置');
+    printKeyValues([
+      ['配置文件', getConfigPath()],
+      ['默认应用', config.currentApp],
+      ['IAM Base URL', config.developer.iamBaseUrl],
+      ['Client ID', config.developer.clientId],
+      ['Client Secret', config.developer.clientSecret ? (opts.showSecret ? config.developer.clientSecret : '••••••••') : '(未设置)'],
+      [
+        '登录状态',
+        Object.entries(config.accounts)
+          .map(([app, account]) => `${app}: ${account.username} (${account.expiresAt})`)
+          .join('; ') || '(未登录)',
+      ],
+    ]);
 
     if (!config.developer.clientId || !config.developer.clientSecret) {
-      console.log(chalk.yellow('\nDeveloper credentials not configured.'));
-      console.log(chalk.gray('Run: postbot config --client-id <id> --client-secret <secret>'));
+      printWarning('未配置开发者凭证，登录将回落到直接登录模式；注册/重置密码不可用。');
+      console.log('  postbot config --client-id <id> --client-secret <secret>');
     }
     return;
   }
 
+  if (opts.defaultApp !== undefined) {
+    if (!isAppName(opts.defaultApp)) {
+      throw new Error('--default-app 只能是 postbot 或 postar');
+    }
+    setDefaultApp(opts.defaultApp);
+  }
+
   const config = getConfig();
-
-  if (opts.clientId) {
-    config.developer.clientId = opts.clientId;
-  }
-  if (opts.clientSecret) {
-    config.developer.clientSecret = opts.clientSecret;
-  }
-  if (opts.iamBaseUrl) {
-    config.developer.iamBaseUrl = opts.iamBaseUrl;
-  }
-
+  if (opts.clientId !== undefined) config.developer.clientId = opts.clientId;
+  if (opts.clientSecret !== undefined) config.developer.clientSecret = opts.clientSecret;
+  if (opts.iamBaseUrl !== undefined) config.developer.iamBaseUrl = opts.iamBaseUrl;
   saveConfig(config);
-  console.log(chalk.green('Configuration saved.'));
+
+  if (global.json) {
+    printJson({ saved: true, path: getConfigPath(), currentApp: config.currentApp });
+    return;
+  }
+  printSuccess('配置已保存。');
 }

@@ -1,7 +1,7 @@
 <p align="center">
   <img alt="logo" src="https://postbot.exmay.com/docs/images/postbot_logo.svg" width="150" height="150">
 </p>
-<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PostBot CLI v1.0.2</h1>
+<h1 align="center" style="margin: 30px 0 30px; font-weight: bold;">PostBot CLI v1.1.0</h1>
 
 <h4 align="center">
   一款命令行下的多平台内容同步、任务流程管理效率工具。
@@ -21,136 +21,334 @@
 	正在持续迭代中...
 </p>
 
+<p align="center">
+   <a href="https://github.com/gitcoffee-os/magio" target="_balnk" style="font-size:14px;color:#915930;">基于开源生态内的开源项目 Magio 平台开发（内置免费模型）<br />Magio 面向全应用端的全链路 AI 开发平台与全场景智能体工作空间</a>
+</p>
+
 > [!NOTE]
 > 当前为快速迭代开发版，适用于开发者与 CI/CD 场景。<br />
 > 如需浏览器扩展或桌面端，请访问 [PostBot 内容同步助手](https://postbot.exmay.com)。
 
-## 📦 安装
+## 特性
+
+- **多平台发布**：一次请求写入多个目标平台，由引擎为每个平台创建发布 Job。
+- **内容类型**：文章、动态、视频、音频。
+- **定时发布**：支持本地时间、ISO 8601、毫秒/秒时间戳。
+- **草稿与自动发布**：`--draft` 仅保存；默认保存后自动发布。
+- **发布前预检**：校验平台字典、账号、在线桌面端，避免“保存成功但没 Job”。
+- **批量发布**：JSON 数组或 `{ defaults, tasks }`，支持 dry-run、fail-fast、相对内容文件。
+- **任务与 Job 管理**：任务 CRUD、绑定内容 ID、触发自动发布、查看 Job 与执行日志。
+- **账号 / 客户端 / 会话**：账号与浏览器指纹、扩展/桌面客户端、SessionBot 只读会话。
+- **脚本友好**：`--json` 输出、明确退出码、全局选项可放在子命令之后。
+
+## 安装
 
 ```bash
 # 全局安装
 npm install -g @gitcoffee/postbot-cli
 
-# 或使用 pnpm
+# 或 pnpm
 pnpm add -g @gitcoffee/postbot-cli
 ```
 
-## 🚀 快速开始
+要求 Node.js >= 18。
+
+## 快速开始
 
 ```bash
-# 配置开发者凭证
+# 1. 配置开发者凭证（可选；不配置则使用直接登录）
 postbot config --client-id <id> --client-secret <secret>
 
-# 登录
+# 2. 登录
 postbot login
 
-# 查看当前用户
+# 3. 查看当前用户
 postbot whoami
 
-# 一键发布内容
-postbot publish --name "我的文章" --type article --content-file ./content.json
+# 4. 检查引擎平台字典与账号
+postbot platform list
+postbot account list
+
+# 5. 发布
+postbot publish \
+  --platforms weixin,xiaohongshu \
+  --content-file ./content.json
 ```
 
-## 🔧 命令
+`content.json`：
 
-### 认证
-
-| 命令 | 说明 |
-|------|------|
-| `postbot login` | 交互式登录（支持代理认证与直接认证） |
-| `postbot register` | 注册新账号 |
-| `postbot logout` | 退出登录 |
-| `postbot whoami` | 查看当前用户信息 |
-| `postbot config` | 查看或设置开发者 OAuth2 凭证 |
-
-### 同步发布
-
-| 命令 | 说明 |
-|------|------|
-| `postbot publish` | 快速同步发布（交互式或参数式） |
-| `postbot batch-publish --file <json>` | 从 JSON 文件批量同步发布 |
-| `postbot status <taskId>` | 查询任务同步发布状态 |
-
-### 工作流
-
-| 命令 | 说明 |
-|------|------|
-| `postbot workflow status <executionId>` | 查询工作流执行状态 |
-| `postbot workflow retry <executionId>` | 重试失败的工作流 |
-
-### 任务管理
-
-| 命令 | 说明 |
-|------|------|
-| `postbot task list` | 列出任务 |
-| `postbot task get <taskId>` | 查看任务详情 |
-
-### 查询
-
-| 命令 | 说明 |
-|------|------|
-| `postbot platform list` | 列出支持的媒体平台 |
-| `postbot account list` | 列出已绑定的媒体账号 |
-| `postbot client list` | 列出已注册的客户端 |
-
-### 应用模式
-
-所有命令支持 `--app` 参数切换应用模式：
-
-```bash
-# 国际版 (Postar)
-postbot --app postar login
-
-# 指定平台同步发布
-postbot --app postbot publish --name "Hello" --type article --content-file ./content.json
+```json
+{
+  "title": "一篇来自 CLI 的文章",
+  "content": "<h2>Hello</h2><p>这是正文。</p>",
+  "cover": "https://cdn.example.com/cover.jpg",
+  "images": ["https://cdn.example.com/1.jpg"]
+}
 ```
 
-## ⚙️ 配置
+## 命令总览
 
-配置文件位于 `~/.config/postbot-cli/config.json`，存储开发者凭证、登录 token 等信息。
+| 命令 | 作用 |
+|---|---|
+| `postbot login` / `register` / `logout` / `whoami` | 登录、注册、退出、当前用户 |
+| `postbot forgot-password` | 重置密码 |
+| `postbot config` | 查看或修改 CLI 配置 |
+| `postbot publish`（`pub`） | 创建并自动发布任务 |
+| `postbot batch-publish` | 从 JSON 批量创建任务 |
+| `postbot status <taskId>` | 聚合任务状态 + 最新 Job + 最近日志 |
+| `postbot task list/get/save/update/delete` | 任务 CRUD |
+| `postbot task batch-delete` | 批量删除任务 |
+| `postbot task bind-content` | 幂等绑定上游内容 ID |
+| `postbot autopublish trigger/status/jobs/log` | 自动发布触发、Job、日志 |
+| `postbot logs` | `autopublish log` 快捷方式 |
+| `postbot platform list/get` | 平台字典 |
+| `postbot account ...` | 账号 CRUD、浏览器指纹 |
+| `postbot client ...` | 扩展/桌面/云端客户端 |
+| `postbot session list/get` | SessionBot 会话（只读） |
+| `postbot notify` | 发送通用通知 |
+| `postbot workflow list/execute/status/retry` | 工作流 |
+
+完整选项见 [docs/CLI-REFERENCE.md](docs/CLI-REFERENCE.md)。
+
+## 发布示例
+
+### 多平台立即发布
 
 ```bash
-# 查看当前配置
-postbot config --show
-
-# 设置凭证
-postbot config --client-id <id> --client-secret <secret>
-
-# 自定义 IAM 地址
-postbot config --iam-base-url https://custom-iam.example.com
+postbot publish \
+  --platforms weixin,xiaohongshu,douyin \
+  --type article \
+  --name "多平台文章" \
+  --content-file ./content.json
 ```
 
-## 🏗️ 开发
+`--platforms` 支持别名：`xhs` → `xiaohongshu`，`channels` / `wechat_channels` → `weixin_channels`，`goofish` / `idlefish` → `xianyu`。
+
+### 定时发布
 
 ```bash
-# 克隆仓库
-git clone https://github.com/gitcoffee-os/postbot-cli.git
-cd postbot-cli
+postbot publish \
+  --platforms weixin \
+  --content-file ./content.json \
+  --scheduled-at "2026-09-01 09:00:00"
 
-# 安装依赖
+postbot publish \
+  --platforms xhs \
+  --content-file ./note.json \
+  --scheduled-at "2026-09-01T09:00:00+08:00"
+```
+
+CLI 会把时间归一化为引擎可识别的格式。已过去的时间会尽快执行，并给出警告。
+
+### 草稿
+
+```bash
+postbot publish --platforms weixin --draft --content-file ./content.json
+```
+
+### 指定发布通道
+
+```bash
+# 云端（默认）
+postbot publish --platforms weixin --channel CLOUD --content-file ./content.json
+
+# 浏览器扩展
+postbot publish --platforms xhs --channel BROWSER_EXTENSION --content-file ./note.json
+
+# 桌面端：自动选择唯一在线桌面端；多个时交互选择
+postbot publish --platforms xhs --channel DESKTOP --content-file ./note.json
+
+# 显式指定桌面端（ID / 名称 / clientKey）
+postbot publish --platforms xhs --channel DESKTOP --client "MacBook" --content-file ./note.json
+```
+
+- `DESKTOP` 必须有在线桌面端，否则报错。
+- `CLOUD` / `BROWSER_EXTENSION_EPHEMERAL` 不接受客户端绑定。
+- 自动发布时，每个目标平台必须有可用账号；否则报错。`--draft` 不受此限制。
+
+### 发布并等待
+
+```bash
+postbot publish --platforms weixin --content-file ./content.json --wait --timeout 600
+```
+
+### 保存任务但不发布
+
+```bash
+postbot task save --platforms weixin --content-file ./content.json --draft
+```
+
+## 内容格式
+
+通用字段：
+
+```json
+{
+  "title": "标题",
+  "content": "正文（HTML 或纯文本）",
+  "description": "视频/音频描述",
+  "images": ["https://cdn.example.com/1.jpg"],
+  "cover": "https://cdn.example.com/cover.jpg",
+  "videoData": {
+    "objectUrl": "https://cdn.example.com/demo.mp4",
+    "name": "demo.mp4",
+    "type": "video/mp4"
+  },
+  "audioData": {
+    "objectUrl": "https://cdn.example.com/ep1.mp3",
+    "name": "ep1.mp3",
+    "type": "audio/mpeg"
+  }
+}
+```
+
+- 文章：`title` + `content`，可带 `cover` / `images`。
+- 动态：`title` + `content` + `images`。
+- 视频：`title` + `description` + `videoData`。
+- 音频：`title` + `description` + `audioData`。
+
+完整字段与各平台差异见 [docs/CONTENT-DATA.md](docs/CONTENT-DATA.md)。
+
+## 批量发布
+
+`tasks.json`：
+
+```json
+{
+  "defaults": {
+    "type": "article",
+    "channel": "CLOUD"
+  },
+  "tasks": [
+    {
+      "name": "任务 A",
+      "platforms": ["weixin", "xhs"],
+      "contentFile": "./a.json"
+    },
+    {
+      "name": "任务 B",
+      "platforms": "weibo",
+      "content": {
+        "title": "B",
+        "content": "正文"
+      },
+      "scheduledAt": "2026-09-01 09:00:00"
+    }
+  ]
+}
+```
+
+```bash
+postbot batch-publish --file ./tasks.json --dry-run
+postbot batch-publish --file ./tasks.json --fail-fast
+```
+
+`contentFile` 相对批量文件所在目录解析。失败任务会汇总；默认继续处理后续任务。
+
+## 任务与排障
+
+```bash
+# 任务列表与筛选
+postbot task list --status FAILED
+postbot task list --platform xiaohongshu --search "文章"
+
+# 任务详情
+postbot task get 123
+
+# 聚合状态（任务 + 最新 Job + 最近日志）
+postbot status 123
+
+# 手动触发自动发布（忽略定时时间）
+postbot autopublish trigger 123
+
+# 查看 Job 与执行日志
+postbot autopublish jobs --task 123
+postbot autopublish log --task 123 --full
+postbot logs --task 123 --failed
+
+# 更新任务（CLI 会 GET 合并后整体回传）
+postbot task update 123 --title "新标题"
+
+# 删除
+postbot task delete 123 --force
+```
+
+常见问题：
+
+| 现象 | 处理 |
+|---|---|
+| 保存成功但没有 Job | 检查平台 code 是否存在于引擎字典；`DESKTOP` 是否绑定在线桌面端 |
+| 提示目标平台没有账号 | 先在客户端登录该平台账号；或使用 `--draft` |
+| 定时任务没按新时间执行 | 引擎不会重排已有 Job；新建任务或 `autopublish trigger` |
+| `HTTP 502` | 网关/引擎不可用，检查 API 地址与网络 |
+| 登录已失效 | `postbot login` |
+
+## JSON 与自动化
+
+```bash
+postbot whoami --json
+postbot task list --status SUCCESS --json
+postbot publish --platforms weixin --content-file ./content.json --wait --json
+postbot batch-publish --file ./tasks.json --json
+```
+
+全局选项可放在子命令后：
+
+```bash
+postbot task list --json --app postbot
+postbot platform list --app postar --json
+```
+
+错误输出：
+
+```json
+{
+  "success": false,
+  "error": {
+    "message": "…",
+    "code": "USER.NOT_FOUND",
+    "kind": "user",
+    "hint": "…"
+  }
+}
+```
+
+## 平台与通道
+
+发布平台以 `postbot platform list` 返回的引擎字典为准。CLI 使用标准码：
+
+| 标准码 | 别名 | 平台 |
+|---|---|---|
+| `xiaohongshu` | `xhs` | 小红书 |
+| `weixin_channels` | `channels`、`wechat_channels` | 视频号 |
+| `weixin` | `weixinmp`、`wechat_mp` | 公众号 |
+| `xianyu` | `goofish`、`idlefish` | 闲鱼 |
+
+发布通道：
+
+- `CLOUD`：云端 Worker，默认。
+- `BROWSER_EXTENSION`：已保存的浏览器扩展。
+- `BROWSER_EXTENSION_EPHEMERAL`：服务端临时浏览器，不可绑定客户端。
+- `DESKTOP`：桌面端，必须绑定在线客户端。
+
+> 若数据库平台字典仍是 `xhs` / `channels` 等旧码，保存后可能不创建 Job。先运行 `postbot platform list` 核对；详见 [docs/ENGINE-API.md](docs/ENGINE-API.md#7-平台编号冲突)。
+
+## 文档
+
+- [CLI 命令参考](docs/CLI-REFERENCE.md)
+- [内容数据格式](docs/CONTENT-DATA.md)
+- [Engine API 对接](docs/ENGINE-API.md)
+
+## 开发
+
+```bash
 pnpm install
-
-# 开发运行
-pnpm dev
-
-# 构建
 pnpm build
-
-# 以 postbot 模式运行
-pnpm postbot
-
-# 以 postar 模式运行
-pnpm postar
+pnpm test
+pnpm dev -- --help
 ```
 
-## 📦 架构
-
-```
-apps/postbot-cli/          CLI 应用（commander + inquirer + chalk）
-packages/sdk/postbot-sdk/  通用 SDK（HTTP 客户端、认证、领域 API、类型）
-```
-
-CLI 依赖的 API 调用能力全部由 `@gitcoffee/postbot-sdk` 提供，该 SDK 同样可被其他前端应用（如 PostBot.app、Postar.app）复用。
+CLI 位于 `apps/postbot-cli`，SDK 位于 `packages/sdk/postbot-sdk`。修改 SDK 后需要重新构建 SDK 的 `dist`，CLI 才能读取到新的类型与实现。
 
 ## 👀 使用体验
 - [PostBot 内容同步助手 云端体验](https://postbot.exmay.com/exmay/postbot/center/home)

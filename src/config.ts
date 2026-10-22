@@ -50,16 +50,38 @@ const DEFAULT_CONFIG: AppConfig = {
   },
 };
 
+function cloneDefaultConfig(): AppConfig {
+  return {
+    currentApp: DEFAULT_CONFIG.currentApp,
+    accounts: {},
+    developer: { ...DEFAULT_CONFIG.developer },
+  };
+}
+
+/** 返回配置副本，避免调用方修改默认配置对象造成跨调用污染。 */
 export function getConfig(): AppConfig {
   if (!existsSync(CONFIG_FILE)) {
-    return DEFAULT_CONFIG;
+    return cloneDefaultConfig();
   }
   try {
     const raw = readFileSync(CONFIG_FILE, 'utf-8');
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw) as Partial<AppConfig>;
+    return {
+      currentApp: parsed.currentApp ?? DEFAULT_CONFIG.currentApp,
+      accounts: parsed.accounts ?? {},
+      developer: {
+        ...DEFAULT_CONFIG.developer,
+        ...(parsed.developer ?? {}),
+      },
+    };
   } catch {
-    return DEFAULT_CONFIG;
+    return cloneDefaultConfig();
   }
+}
+
+/** 配置文件路径（供 `postbot config --show` 与排障使用） */
+export function getConfigPath(): string {
+  return CONFIG_FILE;
 }
 
 export function saveConfig(config: AppConfig): void {
@@ -106,6 +128,12 @@ export function setCurrentToken(token: string, username: string, expiresInSecond
     baseUrl: appConf.baseUrl,
   };
 
+  saveConfig(config);
+}
+
+export function setDefaultApp(app: 'postbot' | 'postar'): void {
+  const config = getConfig();
+  config.currentApp = app;
   saveConfig(config);
 }
 

@@ -1,162 +1,157 @@
-import chalk from 'chalk';
-import ora from 'ora';
+import { AutoPublishApi, WorkflowApi, type AutoPublishJob, type AutoPublishLog } from '@gitcoffee/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
-import { WorkflowApi } from '@gitcoffee/postbot-sdk';
+import type { GlobalOptions } from '../cli.js';
+import { formatDateTime, printHeading, printJson, printKeyValues, printTable, printWarning } from '../output.js';
 
-export async function taskStatus(opts: {
-  taskId?: string;
-  app?: 'postbot' | 'postar';
-  json?: boolean;
-}) {
-  const appKey = appName(opts.app);
+export interface TaskStatusOptions {
+  logs?: boolean;
+  logLimit?: string;
+}
 
-  if (!opts.taskId) {
-    console.log(chalk.red('Task ID is required'));
-    process.exit(1);
+interface StatusTaskInfo extends Record<string, any> {
+  id?: number;
+  name?: string;
+  type?: string;
+  status?: string;
+  publishChannel?: string;
+  scheduledAt?: string;
+  publishedUrl?: string;
+  contentUrl?: string;
+  executionResult?: string;
+  CreateTime?: string;
+  UpdateTime?: string;
+}
+
+interface StatusResult {
+  task?: StatusTaskInfo;
+  latestJob?: AutoPublishJob | Record<string, any>;
+  recentLogs?: Array<AutoPublishLog | Record<string, any>>;
+}
+
+/**
+ * 任务发布状态：以工作流 STATUS_QUERY 的聚合结果为主，
+ * 并用 `/autopublish/task/{id}/status` 补全最新 Job 的平台、租约等字段
+ * （工作流只返回 id/status/时间等精简字段）。
+ */
+export async function taskStatus(
+  taskId: string,
+  options: TaskStatusOptions,
+  global: GlobalOptions,
+): Promise<void> {
+  const id = Number(taskId);
+  if (!Number.isInteger(id) || id < 1) throw new Error(`任务 ID 非法: ${taskId}`);
+
+  const logLimit = Number(options.logLimit ?? 5);
+  if (!Number.isInteger(logLimit) || logLimit < 1) {
+    throw new Error(`--log-limit 必须是 >= 1 的整数: ${options.logLimit}`);
   }
 
-  const spinner = ora('Querying status...').start();
+  const client = createApiClient(appName(global.app));
+  const workflowApi = new WorkflowApi(client);
+  const autoPublishApi = new AutoPublishApi(client);
 
-  try {
-    const client = createApiClient(appKey);
-    const workflowApi = new WorkflowApi(client);
-    const result = await workflowApi.executeWorkflow('STATUS_QUERY', {
-      taskId: Number(opts.taskId),
-    });
+  const [workflow, latestJob] = await Promise.all([
+    workflowApi.executeWorkflow('STATUS_QUERY', { taskId: id }),
+    autoPublishApi.getStatus(id),
+  ]);
 
-    spinner.stop();
+  const result = (workflow.result ?? {}) as StatusResult;
+  const job = latestJob ?? (result.latestJob && (result.latestJob as any).id ? result.latestJob : null);
 
-    if (opts.json) {
-      console.log(JSON.stringify(result.result, null, 2));
-      return;
-    }
+  const payload = {
+    ...result,
+    latestJob: job,
+  };
 
-    console.log(chalk.bold('\nTask Status:'));
-    console.log(chalk.gray('─'.repeat(60)));
-
-    if (result.result?.task) {
-      const task = result.result.task as Record<string, any>;
-      console.log(`  Task ID:        ${chalk.cyan(task.id)}`);
-      console.log(`  Name:           ${chalk.cyan(task.name)}`);
-      console.log(`  Type:           ${chalk.cyan(task.type)}`);
-      console.log(`  Status:         ${chalk.yellow(task.status)}`);
-      if (task.failureReason) {
-        console.log(`  Failure Reason: ${chalk.red(task.failureReason)}`);
-      }
-      console.log(`  Channel:        ${chalk.cyan(task.publishChannel || 'N/A')}`);
-      console.log(`  Scheduled At:   ${chalk.cyan(task.scheduledAt || 'N/A')}`);
-      if (task.publishedUrl) {
-        console.log(`  Published URL:  ${chalk.cyan(task.publishedUrl)}`);
-      }
-      if (task.contentUrl) {
-        console.log(`  Content URL:    ${chalk.cyan(task.contentUrl)}`);
-      }
-      if (task.executionResult) {
-        console.log(`  Execution:      ${chalk.red(task.executionResult)}`);
-      }
-    }
-
-    if (result.result?.latestJob) {
-      const job = result.result.latestJob as Record<string, any>;
-      console.log(chalk.bold('\n  Latest Publish Job:'));
-      console.log(`    Job ID:         ${chalk.cyan(job.id)}`);
-      console.log(`    Status:         ${chalk.yellow(job.status)}`);
-      if (job.failureReason) {
-        console.log(`    Failure Reason: ${chalk.red(job.failureReason)}`);
-      }
-      console.log(`    Scheduled:      ${chalk.cyan(job.scheduledAt || 'N/A')}`);
-      console.log(`    Executed:       ${chalk.cyan(job.executedAt || 'N/A')}`);
-      console.log(`    Retries:        ${job.retryCount}`);
-      if (job.fullLog) {
-        const preview = String(job.fullLog).slice(-1200).trim();
-        console.log(chalk.gray(`    Full Log Preview (last 1200 chars):`));
-        for (const line of preview.split('\n').slice(-30)) {
-          console.log(chalk.gray(`      ${line.slice(-140)}`));
-        }
-      }
-    }
-
-    if (result.result?.recentLogs && Array.isArray(result.result.recentLogs) && result.result.recentLogs.length > 0) {
-      console.log(chalk.bold('\n  Recent Logs:'));
-      for (const log of result.result.recentLogs) {
-        const logEntry = log as Record<string, any>;
-        const statusIcon = logEntry.status === 'SUCCESS' ? chalk.green('✓') : chalk.red('✗');
-        const detail = logEntry.contentUrl || logEntry.publishedUrl || logEntry.errorMsg || logEntry.failureReason || 'N/A';
-        console.log(`    ${statusIcon} ${logEntry.status} - ${detail}`);
-        if (logEntry.failureReason && !logEntry.errorMsg?.includes(logEntry.failureReason)) {
-          console.log(`      Failure Reason: ${chalk.red(logEntry.failureReason)}`);
-        }
-        if (logEntry.pageSnapshotHtml) {
-          const size = String(logEntry.pageSnapshotHtml).length;
-          console.log(`      HTML Snapshot: ${chalk.yellow(`${Math.round(size / 1024)}KB`)}`);
-        }
-        if (logEntry.screenshotUrl) {
-          console.log(`      Screenshot: ${chalk.gray(logEntry.screenshotUrl)}`);
-        }
-        if (logEntry.fullLog) {
-          const preview = String(logEntry.fullLog).slice(-800).trim();
-          if (preview) {
-            console.log(chalk.gray(`      Log Preview (last 800 chars):`));
-            for (const line of preview.split('\n').slice(-20)) {
-              console.log(chalk.gray(`        ${line.slice(-120)}`));
-            }
-          }
-        }
-      }
-
-      const latestLog = result.result.recentLogs[0] as Record<string, any>;
-      const sessionId = latestLog.sessionbotSessionId && latestLog.sessionbotSessionId !== 0
-        ? String(latestLog.sessionbotSessionId)
-        : 'N/A';
-      const proxyId = latestLog.proxybotProfileId && latestLog.proxybotProfileId !== 0
-        ? String(latestLog.proxybotProfileId)
-        : 'N/A';
-      const proxyAddr = latestLog.proxyHost
-        ? `${latestLog.proxyHost}${latestLog.proxyPort ? ':' + latestLog.proxyPort : ''}`
-        : 'N/A';
-      console.log(chalk.bold('\n  Runtime Context:'));
-      console.log(`    Session: ${chalk.cyan(sessionId)} (cookies: ${latestLog.cookieCount ?? 'N/A'})`);
-      console.log(`    Proxy:   ${chalk.cyan(proxyId)} (${chalk.gray(proxyAddr)})`);
-      if (latestLog.hasSnapshot) {
-        console.log(`    ${chalk.yellow('Snapshot available for failed task reproduction')}`);
-      }
-
-      if (latestLog.steps?.length) {
-        console.log(chalk.bold('\n  Execution Steps:'));
-        const stepsByStage = new Map<string, Array<Record<string, any>>>();
-        for (const step of latestLog.steps as Array<Record<string, any>>) {
-          const stage = step.stage || 'OTHER';
-          if (!stepsByStage.has(stage)) {
-            stepsByStage.set(stage, []);
-          }
-          stepsByStage.get(stage)!.push(step);
-        }
-        const stageOrder = ['PREPARE', 'NAVIGATE', 'PUBLISH', 'VERIFY'];
-        const sortedStages = Array.from(stepsByStage.keys()).sort((a, b) => {
-          const indexA = stageOrder.indexOf(a);
-          const indexB = stageOrder.indexOf(b);
-          if (indexA === -1 && indexB === -1) return a.localeCompare(b);
-          if (indexA === -1) return 1;
-          if (indexB === -1) return -1;
-          return indexA - indexB;
-        });
-        for (const stage of sortedStages) {
-          console.log(`    ${chalk.bold(stage)}`);
-          for (const step of stepsByStage.get(stage)!) {
-            const icon = step.status === 'SUCCESS' ? chalk.green('✓')
-              : step.status === 'FAILED' ? chalk.red('✗')
-              : chalk.gray('-');
-            const duration = step.durationMs ? `${step.durationMs}ms` : '';
-            const reason = step.failureReason ? ` [${chalk.red(step.failureReason)}]` : '';
-            console.log(`      ${icon} ${String(step.name).padEnd(20)} ${chalk.gray(duration)}${reason}`);
-          }
-        }
-      }
-    }
-
-    console.log(chalk.gray('─'.repeat(60)));
-  } catch (error: any) {
-    spinner.fail(chalk.red(`Failed to query status: ${error.message}`));
-    process.exit(1);
+  if (global.json) {
+    printJson(payload);
+    return;
   }
+
+  printHeading(`任务状态 #${id}`);
+  printKeyValues([
+    ['名称', result.task?.name],
+    ['类型', result.task?.type],
+    ['状态', result.task?.status],
+    ['发布通道', result.task?.publishChannel],
+    ['定时时间', formatDateTime(result.task?.scheduledAt)],
+    ['发布时间', formatDateTime((result.task as any)?.lastExecutedAt)],
+    ['发布链接', result.task?.publishedUrl],
+    ['内容链接', result.task?.contentUrl],
+    ['执行结果', result.task?.executionResult],
+    ['创建时间', formatDateTime(result.task?.CreateTime ?? (result.task as any)?.createdAt)],
+    ['更新时间', formatDateTime(result.task?.UpdateTime ?? (result.task as any)?.updatedAt)],
+  ]);
+
+  printHeading('最新发布 Job');
+  if (!job) {
+    console.log('  暂无 Job（任务可能为草稿，或平台未匹配导致 Job 未创建）。');
+  } else {
+    printKeyValues([
+      ['Job ID', (job as AutoPublishJob).id],
+      ['平台', (job as AutoPublishJob).platformCode],
+      ['状态', (job as AutoPublishJob).status],
+      ['发布通道', (job as AutoPublishJob).publishChannel],
+      ['定时时间', formatDateTime((job as AutoPublishJob).scheduledAt)],
+      ['执行时间', formatDateTime((job as AutoPublishJob).executedAt)],
+      ['重试', formatRetry(job as AutoPublishJob)],
+      ['认领方', (job as AutoPublishJob).claimedBy],
+      ['租约到期', formatDateTime((job as AutoPublishJob).leaseExpiresAt)],
+      ['Worker', (job as AutoPublishJob).workerNode],
+    ]);
+  }
+
+  const recentLogs = (result.recentLogs ?? []) as Array<Record<string, any>>;
+  if (options.logs === false) return;
+
+  printHeading(`最近执行日志（${recentLogs.length}）`);
+  if (recentLogs.length === 0) {
+    console.log('  暂无执行日志。');
+    return;
+  }
+
+  const limit = logLimit;
+  const visible = recentLogs.slice(0, limit);
+
+  printTable(
+    [
+      { header: '日志 ID', align: 'right' },
+      { header: '平台', maxWidth: 14 },
+      { header: '状态', maxWidth: 16 },
+      { header: '开始', maxWidth: 19 },
+      { header: '结束', maxWidth: 19 },
+      { header: '错误', maxWidth: 36 },
+    ],
+    visible.map((log) => [
+      log.id,
+      log.platformCode,
+      log.status,
+      formatDateTime(log.startedAt),
+      formatDateTime(log.finishedAt),
+      log.errorMsg || log.failureReason,
+    ]),
+  );
+
+  const latestLog = visible[0];
+  if (latestLog?.contentUrl || latestLog?.publishedUrl) {
+    printKeyValues([
+      ['内容链接', latestLog.contentUrl],
+      ['发布链接', latestLog.publishedUrl],
+    ]);
+  }
+  if (latestLog?.fullLog) {
+    printHeading('最新日志片段');
+    const preview = String(latestLog.fullLog).slice(-1500).trim();
+    for (const line of preview.split('\n').slice(-30)) {
+      console.log(`  ${line.slice(-160)}`);
+    }
+  }
+  if (latestLog?.screenshotUrl) {
+    printWarning(`截图: ${latestLog.screenshotUrl}`);
+  }
+}
+
+function formatRetry(job: AutoPublishJob): string | undefined {
+  if (job.retryCount === undefined && job.maxRetryCount === undefined) return undefined;
+  return `${job.retryCount ?? 0} / ${job.maxRetryCount ?? '-'}`;
 }

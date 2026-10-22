@@ -1,31 +1,17 @@
-import chalk from 'chalk';
-import { appName, createApiClient } from '../config.js';
 import { WorkflowApi } from '@gitcoffee/postbot-sdk';
+import { appName, createApiClient } from '../config.js';
+import type { GlobalOptions } from '../cli.js';
+import { printJson, printTable } from '../output.js';
 
-export async function workflowList(opts: {
-  json?: boolean;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const workflowApi = new WorkflowApi(client);
+export async function workflowList(global: GlobalOptions): Promise<void> {
+  const client = createApiClient(appName(global.app));
+  const definitions = await new WorkflowApi(client).listDefinitions();
 
-  try {
-    const definitions = await workflowApi.listDefinitions();
-
-    if (opts.json) {
-      console.log(JSON.stringify(definitions, null, 2));
-      return;
-    }
-
-    console.log(chalk.bold('\nAvailable Workflow Types:'));
-    console.log(chalk.gray('─'.repeat(40)));
-    for (const def of definitions) {
-      console.log(`  ${chalk.cyan(def)}`);
-    }
-    console.log(chalk.gray('─'.repeat(40)));
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to list workflows: ${error.message}`));
-    process.exit(1);
+  if (global.json) {
+    printJson(definitions);
+    return;
   }
+
+  console.log(`\n可用工作流（${definitions.length} 个）`);
+  printTable([{ header: 'Workflow Type', maxWidth: 60 }], definitions.map((name) => [name]));
 }

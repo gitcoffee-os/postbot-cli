@@ -1,114 +1,127 @@
 import inquirer from 'inquirer';
-import chalk from 'chalk';
 import ora from 'ora';
-import { getConfig, setCurrentToken, getAppConfig, appName } from '../config.js';
-import { getAppToken, proxyLogin, proxyRegister, directLogin } from '@gitcoffee/postbot-sdk';
-import { classifyError, tokenHint } from '../errors.js';
+import {
+  directLogin,
+  getAppToken,
+  proxyLogin,
+  proxyRegister,
+} from '@gitcoffee/postbot-sdk';
+import { appName, getAppConfig, getConfig, setCurrentToken } from '../config.js';
+import type { GlobalOptions } from '../cli.js';
+import { classifyError } from '../errors.js';
+import { printJson, printSuccess, printWarning } from '../output.js';
 
-/** 判断是否「用户不存在」（后端未来以 USER_NOT_FOUND 业务码区分；当前兼容中英文消息） */
+export interface LoginOptions {
+  username?: string;
+  password?: string;
+  /** 用户不存在时自动注册，默认 true */
+  register?: boolean;
+  /** JSON 输出时是否包含 token（默认不输出，避免泄漏） */
+  showToken?: boolean;
+}
+
 function isUserNotFound(error: unknown): boolean {
   const { code, message } = classifyError(error);
   if (code === 'USER_NOT_FOUND') return true;
-  // 注意：不能匹配「用户名或密码错误」——该文案同时表示密码错误，误判会导致错误密码被静默注册新账号
   return (
     message.includes('用户不存在') ||
     message.includes('does not exist') ||
-    // IAM 实际返回：`Account loginName not found: <phone>`（明确的「账号不存在」，非密码错误）
     /loginName not found/i.test(message)
   );
 }
 
-export async function login(opts: { username?: string; password?: string; app?: 'postbot' | 'postar' }) {
-  const config = getConfig();
-  const appKey = appName(opts.app);
-
+export async function login(opts: LoginOptions, global: GlobalOptions): Promise<void> {
   let username = opts.username;
   let password = opts.password;
 
-  if (!username || !password) {
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'username',
-        message: 'Phone number:',
-        when: !username,
-      },
-      {
-        type: 'password',
-        name: 'password',
-        message: 'Password:',
-        mask: '*',
-        when: !password,
-      },
+  if ((!username || !password) && process.stdin.isTTY && !global.json) {
+    const answers = await inquirer.prompt<{ username?: string; password?: string }>([
+      { type: 'input', name: 'username', message: '手机号 / 用户名:', when: !username },
+      { type: 'password', name: 'password', message: '密码:', mask: '*', when: !password },
     ]);
     username = username || answers.username;
     password = password || answers.password;
   }
 
   if (!username || !password) {
-    console.log(chalk.red('Phone number and password are required'));
-    process.exit(1);
+    throw new Error('缺少 --username / --password（非交互环境必须显式传入）');
   }
 
-  const spinner = ora('Logging in...').start();
+  const appKey = appName(global.app);
+  const config = getConfig();
+  const appConf = getAppConfig(appKey);
+  const spinner = global.json ? null : ora('登录中...').start();
 
   try {
     if (config.developer.clientId && config.developer.clientSecret) {
-      spinner.text = 'Getting app token...';
+      spinner && (spinner.text = '获取应用令牌...');
       const appAccessToken = await getAppToken(
         config.developer.iamBaseUrl,
         config.developer.clientId,
-        config.developer.clientSecret
+        config.developer.clientSecret,
       );
 
-      spinner.text = 'Authenticating...';
+      spinner && (spinner.text = '认证中...');
+      let result;
       try {
-        const result = await proxyLogin({
+        result = await proxyLogin({
           iamBaseUrl: config.developer.iamBaseUrl,
           appAccessToken,
           clientId: config.developer.clientId,
           username,
           password,
-          appId: getAppConfig(appKey).proxyAppId,
+          appId: appConf.proxyAppId,
         });
-
-        setCurrentToken(result.token, result.username, result.expiresIn, appKey);
-        spinner.succeed(chalk.green(`Logged in as ${result.username} (${appKey})`));
-      } catch (loginError: any) {
-        if (isUserNotFound(loginError)) {
-          spinner.text = 'User not found, registering...';
-          try {
-            const registerResult = await proxyRegister({
-              iamBaseUrl: config.developer.iamBaseUrl,
-              appAccessToken,
-              clientId: config.developer.clientId,
-              username,
-              password,
-              appId: getAppConfig(appKey).proxyAppId,
-            });
-
-            setCurrentToken(registerResult.token, registerResult.username, registerResult.expiresIn, appKey);
-            spinner.succeed(chalk.green(`Account created and logged in as ${registerResult.username} (${appKey})`));
-          } catch (registerError: any) {
-            const hint = tokenHint(registerError);
-            spinner.fail(chalk.red(`Registration failed: ${registerError.message}${hint ? ` (${hint})` : ''}`));
-            process.exit(1);
-          }
-        } else {
-          throw loginError;
+      } catch (loginError) {
+        if (!isUserNotFound(loginError)) throw loginError;
+        if (opts.register === false) {
+          throw new Error(`用户不存在: ${username}（已禁用自动注册）`);
         }
+        spinner && (spinner.text = '用户不存在，自动注册中...');
+        result = await proxyRegister({
+          iamBaseUrl: config.developer.iamBaseUrl,
+          appAccessToken,
+          clientId: config.developer.clientId,
+          username,
+          password,
+          appId: appConf.proxyAppId,
+        });
+        printWarning('用户不存在，已自动注册并登录。');
       }
-    } else {
-      spinner.text = 'Direct login...';
-      const appConf = getAppConfig(appKey);
-      const result = await directLogin(appConf.baseUrl, username, password);
 
-      setCurrentToken(result.access_token, username, result.expires_in, appKey);
-      spinner.succeed(chalk.green(`Logged in as ${username} (${appKey})`));
+      setCurrentToken(result.token, result.username, result.expiresIn, appKey);
+
+      if (global.json) {
+        spinner?.stop();
+        printJson({
+          app: appKey,
+          username: result.username,
+          expiresIn: result.expiresIn,
+          ...(opts.showToken ? { token: result.token } : {}),
+        });
+        return;
+      }
+      spinner?.succeed(`已登录: ${result.username} (${appKey})`);
+      return;
     }
-  } catch (error: any) {
-    const hint = tokenHint(error);
-    spinner.fail(chalk.red(`Login failed: ${error.message}${hint ? ` (${hint})` : ''}`));
-    process.exit(1);
+
+    spinner && (spinner.text = '直接登录中...');
+    const result = await directLogin(appConf.baseUrl, username, password);
+    setCurrentToken(result.access_token, username, result.expires_in, appKey);
+
+    if (global.json) {
+      spinner?.stop();
+      printJson({
+        app: appKey,
+        username,
+        expiresIn: result.expires_in,
+        ...(opts.showToken ? { token: result.access_token } : {}),
+      });
+      return;
+    }
+    spinner?.succeed(`已登录: ${username} (${appKey})`);
+  } catch (error) {
+    spinner?.fail('登录失败');
+    throw error;
   }
 }

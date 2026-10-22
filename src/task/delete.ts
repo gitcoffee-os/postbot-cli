@@ -1,43 +1,30 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
 import { appName, createApiClient } from '../config.js';
+import { confirmAction, type GlobalOptions } from '../cli.js';
 import { TaskApi } from '@gitcoffee/postbot-sdk';
+import { printCancelled, printJson, printSuccess } from '../output.js';
 
-export async function taskDelete(opts: {
-  taskId?: string;
-  force?: boolean;
-  json?: boolean;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const taskApi = new TaskApi(client);
+export async function taskDelete(
+  taskId: string,
+  options: { force?: boolean },
+  global: GlobalOptions,
+): Promise<void> {
+  const id = Number(taskId);
+  if (!Number.isInteger(id) || id < 1) throw new Error(`任务 ID 非法: ${taskId}`);
 
-  if (!opts.taskId) {
-    console.log(chalk.red('Task ID is required'));
-    process.exit(1);
+  const confirmed = await confirmAction(`确认删除任务 ${id}？`, {
+    yes: options.force || global.yes,
+  });
+  if (!confirmed) {
+    printCancelled();
+    return;
   }
 
-  const taskId = Number(opts.taskId);
+  const client = createApiClient(appName(global.app));
+  await new TaskApi(client).delete(id);
 
-  if (!opts.force) {
-    const { confirm } = await inquirer.prompt([{
-      type: 'confirm',
-      name: 'confirm',
-      message: `Delete task ${taskId}?`,
-      default: false,
-    }]);
-    if (!confirm) {
-      console.log(chalk.yellow('Cancelled.'));
-      return;
-    }
+  if (global.json) {
+    printJson({ id, deleted: true });
+    return;
   }
-
-  try {
-    await taskApi.delete(taskId);
-    console.log(chalk.green(`Task ${taskId} deleted.`));
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to delete task: ${error.message}`));
-    process.exit(1);
-  }
+  printSuccess(`任务 ${id} 已删除。`);
 }

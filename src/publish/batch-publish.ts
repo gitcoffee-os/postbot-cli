@@ -1,154 +1,261 @@
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import chalk from 'chalk';
 import ora from 'ora';
 import { appName, createApiClient } from '../config.js';
-import { TaskApi, AccountApi, PlatformApi } from '@gitcoffee/postbot-sdk';
-import { validatePlatformCodes } from '../platform/registry.js';
+import type { GlobalOptions } from '../cli.js';
+import { loadResources } from '../resources.js';
+import { prepareTask, createTask, type TaskBuildSpec } from '../task/build.js';
+import { printJson, printKeyValues, printTable, printWarning } from '../output.js';
 
-interface BatchTaskInput {
-  name: string;
+interface BatchTaskInput extends Record<string, any> {
+  name?: string;
   type?: string;
+  platforms?: string | string[];
   platformCodes?: string[];
   platformCode?: string;
+  platform?: string;
+  account?: string;
   accountUsername?: string;
-  accountId?: number;
-  content: Record<string, any>;
+  accountId?: number | string;
+  channel?: string;
   publishChannel?: string;
+  client?: string;
+  content?: Record<string, any> | string;
+  contentFile?: string;
+  title?: string;
   scheduledAt?: string;
+  onlineTime?: string;
   maxRetryCount?: number;
+  maxRetries?: number;
+  contentId?: string;
+  config?: string;
+  autoPublish?: boolean;
+  draft?: boolean;
 }
 
-export async function batchPublish(opts: {
+interface BatchFile {
+  defaults?: BatchTaskInput;
+  tasks?: BatchTaskInput[];
+}
+
+export interface BatchPublishOptions {
   file?: string;
   channel?: string;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const taskApi = new TaskApi(client);
+  dryRun?: boolean;
+  failFast?: boolean;
+  json?: boolean;
+  app?: string;
+}
 
+interface BatchResult {
+  index: number;
+  name?: string;
+  platforms?: string[];
+  success: boolean;
+  taskId?: number;
+  status?: string;
+  warnings?: string[];
+  error?: string;
+}
+
+export async function batchPublish(opts: BatchPublishOptions, global: GlobalOptions): Promise<void> {
   if (!opts.file) {
-    console.log(chalk.red('File is required: --file <path>'));
-    process.exit(1);
+    throw new Error('缺少 --file <path>');
   }
 
-  let tasks: BatchTaskInput[];
-  try {
-    const raw = readFileSync(opts.file, 'utf-8');
-    const data = JSON.parse(raw);
-    tasks = Array.isArray(data) ? data : data.tasks || [];
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to read file: ${error.message}`));
-    process.exit(1);
-  }
+  const filePath = resolve(opts.file);
+  const baseDir = dirname(filePath);
+  const parsed = parseBatchFile(filePath);
+  const defaults = parsed.defaults ?? {};
+  const tasks = parsed.tasks ?? [];
 
   if (tasks.length === 0) {
-    console.log(chalk.yellow('No tasks found in file'));
-    process.exit(0);
+    throw new Error(`批量文件中没有任务: ${filePath}`);
   }
 
-  const spinner = ora(`Loading accounts and platforms...`).start();
-  const [accountList, platformList] = await Promise.all([
-    new AccountApi(client).list(),
-    new PlatformApi(client).list(),
-  ]);
-  spinner.stop();
+  const client = createApiClient(appName(global.app));
+  const bundle = await loadResources(client, { withClients: true });
 
-  const results: Array<{ index: number; success: boolean; taskId?: number; error?: string }> = [];
+  const results: BatchResult[] = [];
+  const preparedPayloads: Array<{ index: number; payload: unknown; platforms: string[] }> = [];
 
-  for (let i = 0; i < tasks.length; i++) {
-    const task = tasks[i];
-    const index = i + 1;
-    const taskSpinner = ora(`Processing task ${index}/${tasks.length}: ${task.name || 'Unnamed'}`).start();
+  const spinner = global.json || opts.dryRun ? null : ora(`处理 ${tasks.length} 个任务...`).start();
+
+  for (let index = 0; index < tasks.length; index += 1) {
+    const raw = { ...defaults, ...tasks[index] };
+    const label = raw.name || `#${index + 1}`;
+    if (spinner) spinner.text = `处理 ${index + 1}/${tasks.length}: ${label}`;
 
     try {
-      const payload = await buildTaskPayload(task, accountList, platformList, opts.channel);
-      const saved = await taskApi.create(payload);
-      results.push({ index, success: true, taskId: saved.id });
-      taskSpinner.succeed(chalk.green(`Task ${index} saved (ID: ${saved.id})`));
-    } catch (error: any) {
-      results.push({ index, success: false, error: error.message });
-      taskSpinner.fail(chalk.red(`Task ${index} failed: ${error.message}`));
+      const spec = toBuildSpec(raw, baseDir, opts.channel);
+      const prepared = await prepareTask(client, spec, bundle);
+
+      if (opts.dryRun) {
+        preparedPayloads.push({
+          index: index + 1,
+          payload: prepared.payload,
+          platforms: prepared.platformCodes,
+        });
+        results.push({
+          index: index + 1,
+          name: raw.name,
+          platforms: prepared.platformCodes,
+          success: true,
+          status: 'DRY_RUN',
+          warnings: prepared.warnings,
+        });
+        continue;
+      }
+
+      const task = await createTask(client, prepared);
+      results.push({
+        index: index + 1,
+        name: task.name,
+        platforms: prepared.platformCodes,
+        success: true,
+        taskId: task.id,
+        status: task.status,
+        warnings: prepared.warnings,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      results.push({ index: index + 1, name: raw.name, success: false, error: message });
+      if (opts.failFast) {
+        spinner?.fail(`任务 ${index + 1} 失败，已停止`);
+        break;
+      }
     }
   }
 
-  const successCount = results.filter(r => r.success).length;
-  const failCount = results.length - successCount;
+  spinner?.stop();
 
-  console.log(chalk.bold('\nResult:'));
-  console.log(chalk.gray('─'.repeat(50)));
-  console.log(`  Success: ${chalk.green(successCount)}`);
-  console.log(`  Failed:  ${chalk.red(failCount)}`);
-  console.log(`  Total:   ${results.length}`);
-  console.log(chalk.gray('─'.repeat(50)));
+  if (opts.dryRun) {
+    const failed = results.filter((result) => !result.success);
+    if (global.json) {
+      printJson({ dryRun: true, tasks: preparedPayloads, failed });
+      if (failed.length > 0) process.exitCode = 1;
+      return;
+    }
+    console.log(chalk.bold(`\nDry run: ${preparedPayloads.length} 个任务（未保存）`));
+    for (const item of preparedPayloads) {
+      console.log(chalk.gray(`\n#${item.index} ${item.platforms.join(', ')}`));
+      console.log(JSON.stringify(item.payload, null, 2));
+    }
+    printResultSummary(results);
+    if (failed.length > 0) process.exitCode = 1;
+    return;
+  }
 
-  if (failCount > 0) {
-    process.exit(1);
+  if (global.json) {
+    printJson(results);
+    if (results.some((result) => !result.success)) process.exitCode = 1;
+    return;
+  }
+
+  printResultTable(results);
+  printResultSummary(results);
+
+  const failed = results.filter((result) => !result.success).length;
+  if (failed > 0) {
+    process.exitCode = 1;
   }
 }
 
-async function buildTaskPayload(
-  task: BatchTaskInput,
-  accountList: Array<{ id: number; username?: string }>,
-  platformList: Array<{ id: number; code: string }>,
-  defaultChannel?: string
-): Promise<Record<string, any>> {
-  if (!task.name) {
-    throw new Error('Task name is required');
+function parseBatchFile(path: string): BatchFile {
+  let raw: string;
+  try {
+    raw = readFileSync(path, 'utf-8');
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`无法读取批量文件 ${path}: ${message}`);
   }
 
-  const platformCodes = task.platformCodes
-    || (task.platformCode ? [task.platformCode] : []);
-
-  if (platformCodes.length === 0) {
-    throw new Error('platformCodes or platformCode is required');
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`批量文件不是合法 JSON: ${message}`);
   }
 
-  const { valid, invalid, unsupported } = validatePlatformCodes(platformCodes, task.type as any);
-  if (invalid.length > 0) {
-    throw new Error(`Invalid platform codes: ${invalid.join(', ')}`);
+  if (Array.isArray(data)) return { tasks: data as BatchTaskInput[] };
+  if (data && typeof data === 'object') {
+    const file = data as BatchFile;
+    if (Array.isArray(file.tasks)) return file;
   }
-  if (unsupported.length > 0) {
-    throw new Error(`Platform codes not supported for type '${task.type}': ${unsupported.join(', ')}`);
-  }
-  if (valid.length === 0) {
-    throw new Error('No valid platform codes provided');
+  throw new Error('批量文件格式应为数组，或 {"defaults": {...}, "tasks": [...]}');
+}
+
+function toBuildSpec(input: BatchTaskInput, baseDir: string, defaultChannel?: string): TaskBuildSpec {
+  const platforms =
+    input.platforms ??
+    input.platformCodes ??
+    input.platformCode ??
+    input.platform;
+
+  let content = input.content;
+  let contentJson: string | undefined;
+  if (typeof content === 'string') {
+    contentJson = content;
+    content = undefined;
   }
 
-  let accountId = task.accountId;
-  if (!accountId && task.accountUsername) {
-    const account = accountList.find(a => a.username === task.accountUsername);
-    if (!account) {
-      throw new Error(`Account not found: ${task.accountUsername}`);
+  return {
+    name: input.name,
+    type: input.type,
+    platforms,
+    account: input.account ?? input.accountUsername,
+    accountId: input.accountId,
+    client: input.client ?? (input.mediaClientId !== undefined ? String(input.mediaClientId) : undefined),
+    channel: input.channel ?? input.publishChannel ?? defaultChannel,
+    content,
+    contentJson,
+    contentFile: input.contentFile,
+    title: input.title,
+    scheduledAt: input.scheduledAt ?? input.onlineTime,
+    maxRetries: input.maxRetryCount ?? input.maxRetries,
+    contentId: input.contentId,
+    config: input.config,
+    autoPublish: input.autoPublish,
+    draft: input.draft,
+    baseDir,
+  };
+}
+
+function printResultTable(results: BatchResult[]): void {
+  printTable(
+    [
+      { header: '#', align: 'right' },
+      { header: '任务', maxWidth: 24 },
+      { header: '平台', maxWidth: 32 },
+      { header: '状态' },
+      { header: '任务 ID', align: 'right' },
+      { header: '错误', maxWidth: 40 },
+    ],
+    results.map((result) => [
+      result.index,
+      result.name,
+      result.platforms?.join(', '),
+      result.success ? result.status ?? 'OK' : 'FAILED',
+      result.taskId,
+      result.error,
+    ]),
+  );
+}
+
+function printResultSummary(results: BatchResult[]): void {
+  const success = results.filter((result) => result.success).length;
+  const failed = results.length - success;
+  console.log('');
+  printKeyValues([
+    ['成功', success],
+    ['失败', failed],
+    ['总数', results.length],
+  ]);
+  for (const result of results) {
+    for (const warning of result.warnings ?? []) {
+      printWarning(`#${result.index} ${warning}`);
     }
-    accountId = account.id;
   }
-
-  if (!accountId) {
-    throw new Error('accountId or accountUsername is required');
-  }
-
-  const primaryPlatform = platformList.find(p => p.code === platformCodes[0]);
-
-  const data = {
-    ...task.content,
-    platformCodes,
-    onlineTime: task.scheduledAt || task.content?.onlineTime || '',
-  };
-
-  const payload: Record<string, any> = {
-    name: task.name,
-    type: task.type || 'article',
-    data: JSON.stringify(data),
-    isAutoPublish: true,
-    mediaAccountId: accountId,
-    publishChannel: task.publishChannel || defaultChannel || 'CLOUD',
-    ...(primaryPlatform ? { mediaPlatformId: primaryPlatform.id } : {}),
-  };
-
-  if (task.maxRetryCount !== undefined) {
-    payload.maxRetryCount = task.maxRetryCount;
-  }
-
-  return payload;
 }

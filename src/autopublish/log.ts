@@ -1,64 +1,109 @@
-import chalk from 'chalk';
+import { AutoPublishApi, type AutoPublishListParams } from '@gitcoffee/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
-import { AutoPublishApi } from '@gitcoffee/postbot-sdk';
+import type { GlobalOptions } from '../cli.js';
+import { formatDateTime, printDivider, printJson, printTable } from '../output.js';
+import { normalizePlatformCode } from '../platform/registry.js';
 
-export async function autopublishLog(opts: {
-  taskId?: string;
-  json?: boolean;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const api = new AutoPublishApi(client);
+export interface AutopublishLogOptions {
+  task?: string;
+  status?: string;
+  platform?: string;
+  limit?: string;
+  failed?: boolean;
+  full?: boolean;
+}
 
-  try {
-    let logs = await api.listLogs();
-    const filtered = opts.taskId
-      ? logs.filter((l) => String(l.taskId) === String(opts.taskId))
-      : null;
+export async function autopublishLog(
+  opts: AutopublishLogOptions,
+  global: GlobalOptions,
+): Promise<void> {
+  const params: AutoPublishListParams = {};
+  if (opts.task !== undefined) {
+    const taskId = Number(opts.task);
+    if (!Number.isInteger(taskId) || taskId < 1) throw new Error(`--task 非法: ${opts.task}`);
+    params.taskId = taskId;
+  }
+  if (opts.status) params.status = opts.status.toUpperCase();
+  if (opts.limit !== undefined) {
+    const limit = Number(opts.limit);
+    if (!Number.isInteger(limit) || limit < 0) throw new Error('--limit 必须是非负整数');
+  }
 
-    if (opts.json) {
-      console.log(JSON.stringify(filtered ?? logs, null, 2));
-      return;
-    }
+  const client = createApiClient(appName(global.app));
+  let logs = await new AutoPublishApi(client).listLogs(params);
 
-    logs = filtered ?? logs;
+  // 兼容平台字典中的历史短码；SDK 的平台过滤是精确匹配。
+  if (opts.platform) {
+    const target = normalizePlatformCode(opts.platform);
+    logs = logs.filter((log) => normalizePlatformCode(String(log.platformCode ?? '')) === target);
+  }
+  if (opts.failed) {
+    logs = logs.filter((log) => ['FAILED', 'FAILED_RETRYABLE'].includes(String(log.status).toUpperCase()));
+  }
+  if (opts.limit !== undefined) {
+    logs = logs.slice(0, Number(opts.limit));
+  }
 
-    if (filtered) {
-      // 按任务过滤时走明细视图：直接展示每条执行的错误信息（定位失败原因无需再查接口）
-      console.log(chalk.bold(`\nAuto-Publish Logs for Task ${opts.taskId} (${logs.length} entries):`));
-      for (const log of logs) {
-        console.log(chalk.gray('─'.repeat(90)));
-        console.log(
-          `  Log #${log.id} | ${log.platformCode || 'N/A'} | ${chalk.yellow(log.status || 'N/A')} | worker: ${log.workerNode || 'N/A'}`,
-        );
-        console.log(`  Started: ${log.startedAt || 'N/A'}${log.finishedAt ? ` → ${log.finishedAt}` : ''}`);
-        if (log.errorMsg) {
-          console.log(`  Error:   ${chalk.red(log.errorMsg)}`);
+  if (global.json) {
+    printJson(logs);
+    return;
+  }
+
+  if (logs.length === 0) {
+    console.log('暂无执行日志。');
+    return;
+  }
+
+  if (opts.task) {
+    console.log(`\n任务 #${opts.task} 执行日志（${logs.length} 条）`);
+    for (const log of logs) {
+      printDivider(92);
+      console.log(
+        `  Log #${log.id} | Job #${log.jobId ?? '-'} | ${log.platformCode ?? '-'} | ${log.status}` +
+          ` | 通道 ${log.publishChannel ?? '-'} | worker ${log.workerNode ?? '-'}`,
+      );
+      console.log(
+        `  开始: ${formatDateTime(log.startedAt) ?? '-'}` +
+          `${log.finishedAt ? ` → ${formatDateTime(log.finishedAt)}` : ''}` +
+          ` | 重试 ${log.retryCount ?? 0}`,
+      );
+      if (log.errorMsg) console.log(`  错误: ${log.errorMsg}`);
+      if (log.contentUrl) console.log(`  内容: ${log.contentUrl}`);
+      if (log.publishedUrl) console.log(`  发布: ${log.publishedUrl}`);
+      if (log.screenshotUrl) console.log(`  截图: ${log.screenshotUrl}`);
+      if (opts.full && log.fullLog) {
+        console.log('  完整日志:');
+        for (const line of String(log.fullLog).split('\n')) {
+          console.log(`    ${line}`);
         }
       }
-      console.log(chalk.gray('─'.repeat(90)));
-      return;
     }
-
-    console.log(chalk.bold(`\nAuto-Publish Logs (${logs.length} entries):`));
-    console.log(chalk.gray('─'.repeat(90)));
-    console.log(chalk.bold('  ID    | TaskID | Platform    | Status    | Worker              | Started'));
-    console.log(chalk.gray('─'.repeat(90)));
-
-    for (const log of logs) {
-      const id = String(log.id).padEnd(6);
-      const taskId = String(log.taskId).padEnd(7);
-      const platform = (log.platformCode || 'N/A').padEnd(12);
-      const status = (log.status || 'N/A').padEnd(10);
-      const worker = (log.workerNode || 'N/A').substring(0, 19).padEnd(20);
-      const started = log.startedAt || 'N/A';
-      console.log(`  ${id}| ${taskId}| ${platform}| ${status}| ${worker}| ${started}`);
-    }
-
-    console.log(chalk.gray('─'.repeat(90)));
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to list logs: ${error.message}`));
-    process.exit(1);
+    printDivider(92);
+    return;
   }
+
+  console.log(`\n执行日志（${logs.length} 条，按 ID 倒序）`);
+  printTable(
+    [
+      { header: '日志 ID', align: 'right' },
+      { header: '任务', align: 'right' },
+      { header: 'Job', align: 'right' },
+      { header: '平台', maxWidth: 15 },
+      { header: '状态', maxWidth: 16 },
+      { header: '重试', maxWidth: 5 },
+      { header: '开始', maxWidth: 19 },
+      { header: '错误', maxWidth: 40 },
+    ],
+    logs.map((log) => [
+      log.id,
+      log.taskId,
+      log.jobId,
+      log.platformCode,
+      log.status,
+      log.retryCount,
+      formatDateTime(log.startedAt),
+      log.errorMsg,
+    ]),
+  );
+  console.log('\n使用 --task <id> 查看单任务明细，--full 输出完整日志。');
 }

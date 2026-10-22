@@ -1,47 +1,29 @@
-import chalk from 'chalk';
-import inquirer from 'inquirer';
 import { appName, createApiClient } from '../config.js';
+import { confirmAction, parseIdList, type GlobalOptions } from '../cli.js';
 import { TaskApi } from '@gitcoffee/postbot-sdk';
+import { printCancelled, printJson, printSuccess } from '../output.js';
 
-export async function taskBatchDelete(opts: {
-  ids?: string;
-  force?: boolean;
-  json?: boolean;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const taskApi = new TaskApi(client);
+export async function taskBatchDelete(
+  options: { ids?: string; force?: boolean },
+  global: GlobalOptions,
+): Promise<void> {
+  if (!options.ids) throw new Error('缺少 --ids <ids>（逗号分隔的任务 ID）');
+  const ids = parseIdList(options.ids, '任务 ID');
 
-  if (!opts.ids) {
-    console.log(chalk.red('Task IDs are required (comma-separated)'));
-    process.exit(1);
+  const confirmed = await confirmAction(`确认删除 ${ids.length} 个任务（${ids.join(', ')}）？`, {
+    yes: options.force || global.yes,
+  });
+  if (!confirmed) {
+    printCancelled();
+    return;
   }
 
-  const taskIds = opts.ids.split(',').map(s => Number(s.trim())).filter(n => !isNaN(n));
-  if (taskIds.length === 0) {
-    console.log(chalk.red('No valid task IDs provided'));
-    process.exit(1);
-  }
+  const client = createApiClient(appName(global.app));
+  await new TaskApi(client).batchDelete(ids);
 
-  if (!opts.force) {
-    const { confirm } = await inquirer.prompt([{
-      type: 'confirm',
-      name: 'confirm',
-      message: `Delete ${taskIds.length} task(s) (${taskIds.join(', ')})?`,
-      default: false,
-    }]);
-    if (!confirm) {
-      console.log(chalk.yellow('Cancelled.'));
-      return;
-    }
+  if (global.json) {
+    printJson({ ids, deleted: true });
+    return;
   }
-
-  try {
-    await taskApi.batchDelete(taskIds);
-    console.log(chalk.green(`${taskIds.length} task(s) deleted.`));
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to batch delete tasks: ${error.message}`));
-    process.exit(1);
-  }
+  printSuccess(`${ids.length} 个任务已删除。`);
 }

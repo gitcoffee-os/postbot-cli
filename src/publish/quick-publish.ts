@@ -1,272 +1,164 @@
-import { readFileSync } from 'node:fs';
-import inquirer from 'inquirer';
-import chalk from 'chalk';
 import ora from 'ora';
+import { WorkflowApi } from '@gitcoffee/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
-import { WorkflowApi, WorkflowExecutionResult, PlatformApi, Platform, AccountApi, Account, TaskApi } from '@gitcoffee/postbot-sdk';
-import { getContentTypeChoices, getPlatformChoices, validatePlatformCodes } from '../platform/registry.js';
+import type { GlobalOptions } from '../cli.js';
+import { TERMINAL_TASK_STATUSES } from '../constants.js';
+import { printJson, printKeyValues, printSuccess, printWarning } from '../output.js';
+import { prepareTask, createTask, type TaskBuildSpec } from '../task/build.js';
+import { printTaskDetail, printWarnings } from '../task/format.js';
 
-export async function quickPublish(opts: {
-  name?: string;
-  type?: string;
-  platform?: string;
-  platforms?: string;
-  account?: string;
-  contentFile?: string;
-  channel?: string;
-  scheduledAt?: string;
-  maxRetries?: string | number;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
-  const client = createApiClient(appKey);
-  const workflowApi = new WorkflowApi(client);
-
-  let { name, type, platform, platforms, account, contentFile, channel, scheduledAt } = opts;
-
-  if (!name || !type || (!platform && !platforms) || !account) {
-    const platformApi = new PlatformApi(client);
-    const accountApi = new AccountApi(client);
-
-    let platformList: Platform[] = [];
-    let accountList: Account[] = [];
-
-    const spinner = ora('Loading platforms and accounts...').start();
-    try {
-      [platformList, accountList] = await Promise.all([platformApi.list(), accountApi.list()]);
-      spinner.stop();
-    } catch (error: any) {
-      spinner.fail(chalk.red(`Failed to load data: ${error.message}`));
-      process.exit(1);
-    }
-
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'name',
-        message: 'Task name:',
-        when: !name,
-      },
-      {
-        type: 'list',
-        name: 'type',
-        message: 'Content type:',
-        choices: getContentTypeChoices(),
-        when: !type,
-      },
-      {
-        type: 'checkbox',
-        name: 'platforms',
-        message: 'Select target platforms:',
-        choices(answers: any) {
-          return getPlatformChoices(answers.type || type);
-        },
-        validate: (value: string[]) => value.length > 0 || 'Please select at least one platform',
-        when: !platform && !platforms,
-      },
-      {
-        type: 'list',
-        name: 'account',
-        message: 'Account:',
-        choices: accountList.map(a => ({ name: `${a.username} (${a.name || 'N/A'})`, value: a.username })),
-        when: !account,
-      },
-      {
-        type: 'list',
-        name: 'channel',
-        message: 'Publish channel:',
-        choices: ['CLOUD', 'BROWSER_EXTENSION', 'DESKTOP'],
-        default: 'CLOUD',
-        when: !channel,
-      },
-    ] as any);
-
-    name = name || answers.name;
-    type = type || answers.type;
-    platforms = platforms || answers.platforms?.join(',');
-    account = account || answers.account;
-    channel = channel || answers.channel;
-  }
-
-  const selectedPlatforms = (platforms || platform || '')
-    .split(',')
-    .map(c => c.trim())
-    .filter(Boolean);
-
-  if (selectedPlatforms.length === 0) {
-    console.log(chalk.red('At least one platform is required'));
-    process.exit(1);
-  }
-
-  const { valid, invalid, unsupported } = validatePlatformCodes(selectedPlatforms, type as any);
-  if (invalid.length > 0) {
-    console.log(chalk.red(`Invalid platform codes: ${invalid.join(', ')}`));
-    process.exit(1);
-  }
-  if (unsupported.length > 0) {
-    console.log(chalk.red(`Platform codes not supported for type '${type}': ${unsupported.join(', ')}`));
-    process.exit(1);
-  }
-  if (valid.length === 0) {
-    console.log(chalk.red('No valid platform codes provided'));
-    process.exit(1);
-  }
-
-  if (!contentFile) {
-    const { contentFile: cf } = await inquirer.prompt([{
-      type: 'input',
-      name: 'contentFile',
-      message: 'Content file path (JSON):',
-    }]);
-    contentFile = cf;
-  }
-
-  let content: any;
-  try {
-    const raw = readFileSync(contentFile!, 'utf-8');
-    content = JSON.parse(raw);
-  } catch (error: any) {
-    console.log(chalk.red(`Failed to read content file: ${error.message}`));
-    process.exit(1);
-  }
-
-  const spinner = ora('Publishing...').start();
-
-  try {
-    let result: WorkflowExecutionResult;
-
-    if (selectedPlatforms.length === 1) {
-      // 单平台：继续走工作流，保持原有行为
-      result = await workflowApi.executeWorkflow('QUICK_PUBLISH', {
-        name,
-        type,
-        platformCode: selectedPlatforms[0],
-        accountUsername: account,
-        publishChannel: channel || 'CLOUD',
-        content,
-        scheduledAt,
-      });
-
-      spinner.succeed(chalk.green('Publish workflow executed!'));
-      printWorkflowResult(result);
-    } else {
-      // 多平台：直接保存任务，由后端自动发布
-      result = await saveMultiPlatformTask(client, {
-        name: name!,
-        type: type!,
-        platformCodes: selectedPlatforms,
-        accountUsername: account!,
-        publishChannel: channel || 'CLOUD',
-        content,
-        scheduledAt,
-        maxRetries: opts.maxRetries,
-      });
-
-      spinner.succeed(chalk.green('Multi-platform task saved!'));
-      printMultiPlatformResult(result);
-    }
-  } catch (error: any) {
-    spinner.fail(chalk.red(`Publish failed: ${error.message}`));
-    process.exit(1);
-  }
+export interface PublishOptions extends TaskBuildSpec {
+  /** 保存后等待发布结束 */
+  wait?: boolean;
+  /** 等待超时秒数，默认 600 */
+  timeout?: string;
+  /** 轮询间隔秒数，默认 3 */
+  interval?: string;
 }
 
-async function saveMultiPlatformTask(
-  client: any,
-  opts: {
-    name: string;
-    type: string;
-    platformCodes: string[];
-    accountUsername: string;
-    publishChannel: string;
-    content: any;
-    scheduledAt?: string;
-    maxRetries?: string | number;
-  }
-): Promise<WorkflowExecutionResult> {
-  const accountApi = new AccountApi(client);
-  const platformApi = new PlatformApi(client);
+/**
+ * 快捷发布：直接调用 `/postbot/media/task/save`（isAutoPublish=true）。
+ *
+ * 所有平台走同一条路径，不再区分单平台 QUICK_PUBLISH 工作流：
+ * 引擎任务保存本身即支持多平台、定时、草稿、客户端绑定与重试。
+ */
+export async function quickPublish(opts: PublishOptions, global: GlobalOptions): Promise<void> {
+  const client = createApiClient(appName(global.app));
 
-  const [accountList, platformList] = await Promise.all([
-    accountApi.list(),
-    platformApi.list(),
+  if (opts.platform && !opts.platforms) {
+    printWarning('--platform 已废弃，请改用 --platforms（支持逗号分隔多平台）。');
+  }
+  if (opts.wait && opts.draft) {
+    throw new Error('--draft 仅保存草稿，不能与 --wait 同时使用');
+  }
+
+  const timeoutSeconds = Number(opts.timeout ?? 600);
+  const intervalSeconds = Number(opts.interval ?? 3);
+  if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0) {
+    throw new Error(`--timeout 必须是正数秒: ${opts.timeout}`);
+  }
+  if (!Number.isFinite(intervalSeconds) || intervalSeconds <= 0) {
+    throw new Error(`--interval 必须是正数秒: ${opts.interval}`);
+  }
+
+  const prepared = await prepareTask(client, opts);
+  printWarnings(prepared.warnings);
+
+  const spinner = global.json ? null : ora('正在创建发布任务...').start();
+  let task;
+  try {
+    task = await createTask(client, prepared);
+    spinner?.succeed(`任务已创建（ID ${task.id}）`);
+  } catch (error) {
+    spinner?.fail('创建发布任务失败');
+    throw error;
+  }
+
+  if (!global.json) {
+    printTaskDetail(task, {
+      platformCodes: prepared.platformCodes,
+      clientId: prepared.client?.id,
+    });
+    printSuccess(
+      prepared.autoPublish
+        ? `已编排 ${prepared.platformCodes.length} 个平台的发布 Job。`
+        : '已保存为草稿。',
+    );
+  }
+
+  if (!opts.wait) {
+    if (global.json) {
+      printJson(task);
+    } else if (prepared.autoPublish) {
+      console.log(`查看状态: postbot status ${task.id}`);
+      console.log(`等待完成: postbot publish --wait  （或 postbot status ${task.id}）`);
+    }
+    return;
+  }
+
+  const timeoutMs = timeoutSeconds * 1000;
+  const intervalMs = intervalSeconds * 1000;
+  const statusResult = await waitForCompletion(client, task.id, {
+    timeoutMs,
+    intervalMs,
+    silent: Boolean(global.json),
+  });
+
+  if (global.json) {
+    printJson({ task, status: statusResult });
+    return;
+  }
+
+  const taskInfo = (statusResult.task ?? {}) as Record<string, any>;
+  const job = (statusResult.latestJob ?? {}) as Record<string, any>;
+  printKeyValues([
+    ['最终状态', taskInfo.status ?? task.status],
+    ['最新 Job', job.id ? `#${job.id} ${job.status}` : '（无 Job）'],
+    ['发布链接', taskInfo.publishedUrl],
+    ['内容链接', taskInfo.contentUrl],
+    ['执行结果', taskInfo.executionResult],
   ]);
 
-  const account = accountList.find(a => a.username === opts.accountUsername);
-  if (!account) {
-    throw new Error(`Account not found: ${opts.accountUsername}`);
+  if (String(taskInfo.status ?? '') !== 'SUCCESS') {
+    throw new Error(`任务未成功完成，最终状态: ${taskInfo.status ?? 'UNKNOWN'}`);
   }
-
-  const primaryPlatform = platformList.find(p => p.code === opts.platformCodes[0]);
-
-  const data = {
-    ...opts.content,
-    platformCodes: opts.platformCodes,
-    onlineTime: opts.scheduledAt || opts.content.onlineTime || '',
-  };
-
-  const taskApi = new TaskApi(client);
-  const createPayload: Record<string, any> = {
-    name: opts.name,
-    type: opts.type,
-    data: JSON.stringify(data),
-    isAutoPublish: true,
-    mediaAccountId: account.id,
-    publishChannel: opts.publishChannel,
-    ...(primaryPlatform ? { mediaPlatformId: primaryPlatform.id } : {}),
-  };
-  if (opts.maxRetries !== undefined) {
-    createPayload.maxRetryCount = Number(opts.maxRetries);
-  }
-  const task = await taskApi.create(createPayload);
-
-  return {
-    executionId: '',
-    workflowType: 'DIRECT_SAVE',
-    status: 'SUCCESS',
-    result: {
-      taskId: task.id,
-      platformCount: opts.platformCodes.length,
-      platformCodes: opts.platformCodes,
-    },
-    steps: [],
-  };
+  printSuccess('发布成功。');
 }
 
-function printWorkflowResult(result: WorkflowExecutionResult) {
-  console.log(chalk.bold('\nResult:'));
-  console.log(chalk.gray('─'.repeat(50)));
-  console.log(`  Execution ID: ${chalk.cyan(result.executionId)}`);
-  console.log(`  Status:       ${chalk.yellow(result.status)}`);
-  if (result.result?.taskId) {
-    console.log(`  Task ID:      ${chalk.cyan(result.result.taskId)}`);
-  }
-  if (result.result?.jobId) {
-    console.log(`  Job ID:       ${chalk.cyan(result.result.jobId)}`);
-  }
-  if (result.result?.publishedUrl) {
-    console.log(`  Published URL:${chalk.cyan(result.result.publishedUrl)}`);
-  }
-  if (result.result?.contentUrl) {
-    console.log(`  Content URL:  ${chalk.cyan(result.result.contentUrl)}`);
-  }
-  console.log(chalk.gray('─'.repeat(50)));
+interface WaitResult {
+  task?: Record<string, any>;
+  latestJob?: Record<string, any>;
+  recentLogs?: Array<Record<string, any>>;
+}
 
-  if (result.steps) {
-    console.log(chalk.bold('\nSteps:'));
-    for (const step of result.steps) {
-      const icon = step.status === 'SUCCESS' ? chalk.green('✓') : step.status === 'FAILED' ? chalk.red('✗') : chalk.yellow('○');
-      console.log(`  ${icon} ${step.stepName}: ${step.message}`);
+async function waitForCompletion(
+  client: ReturnType<typeof createApiClient>,
+  taskId: number,
+  options: { timeoutMs: number; intervalMs: number; silent: boolean },
+): Promise<WaitResult> {
+  const workflowApi = new WorkflowApi(client);
+  const deadline = Date.now() + options.timeoutMs;
+  let last: WaitResult = {};
+  let warnedNoJob = false;
+
+  const spinner = options.silent ? null : ora(`等待任务 ${taskId} 完成...`).start();
+
+  try {
+    for (;;) {
+      const result = await workflowApi.executeWorkflow('STATUS_QUERY', { taskId });
+      last = (result.result ?? {}) as WaitResult;
+      const status = String(last.task?.status ?? '');
+      const jobStatus = String(last.latestJob?.status ?? '');
+
+      if (spinner) {
+        spinner.text = `等待任务 ${taskId} 完成... 任务 ${status || '?'}${jobStatus ? ` / Job ${jobStatus}` : ''}`;
+      }
+
+      if (!warnedNoJob && !last.latestJob?.id && status === 'PENDING' && Date.now() > deadline - options.timeoutMs + 15_000) {
+        warnedNoJob = true;
+        printWarning(
+          '任务仍为 PENDING 且没有 Job。请检查平台字典 code 是否与引擎标准化后的编号一致（postbot platform list）。',
+        );
+      }
+
+      if (TERMINAL_TASK_STATUSES.includes(status)) {
+        spinner?.succeed(`任务 ${taskId} 已结束: ${status}`);
+        return last;
+      }
+
+      if (Date.now() + options.intervalMs > deadline) {
+        spinner?.fail(`等待超时（${Math.round(options.timeoutMs / 1000)}s）`);
+        throw new Error(`等待任务 ${taskId} 超时，最后状态: ${status || 'UNKNOWN'}`);
+      }
+
+      await sleep(options.intervalMs);
     }
+  } catch (error) {
+    spinner?.stop();
+    throw error;
   }
 }
 
-function printMultiPlatformResult(result: WorkflowExecutionResult) {
-  console.log(chalk.bold('\nResult:'));
-  console.log(chalk.gray('─'.repeat(50)));
-  console.log(`  Task ID:       ${chalk.cyan(result.result.taskId)}`);
-  console.log(`  Platforms:     ${chalk.cyan(result.result.platformCount)}`);
-  console.log(`  PlatformCodes: ${chalk.cyan(result.result.platformCodes.join(', '))}`);
-  console.log(`  Status:        ${chalk.yellow(result.status)}`);
-  console.log(chalk.gray('─'.repeat(50)));
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

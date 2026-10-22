@@ -1,4 +1,6 @@
+import chalk from 'chalk';
 import { IamApiError } from '@gitcoffee/postbot-sdk';
+import { getRuntimeFlags, printJson } from './output.js';
 
 /** 错误归类（对应后端分级错误码前缀，见 IAM ERROR_CODE.md） */
 export type ErrorKind = 'developer' | 'user' | 'delegation' | 'auth' | 'other';
@@ -48,4 +50,37 @@ export function tokenHint(error: unknown): string {
 /** 是否为 IamApiError（可用于精确判断是否携带业务码） */
 export function isIamApiError(error: unknown): error is IamApiError {
   return error instanceof IamApiError;
+}
+
+/**
+ * 统一错误出口：
+ * - `--json` 输出结构化错误到 stdout，便于 CI 解析；
+ * - 普通模式输出红色错误 + 修复建议；
+ * - 设置 process.exitCode，不强制退出，保证 stdout 完整刷新。
+ */
+export function handleError(error: unknown): void {
+  const { message, code, kind } = classifyError(error);
+  const flags = getRuntimeFlags();
+  const hint = tokenHint(error);
+
+  if (flags.json) {
+    printJson({
+      success: false,
+      error: {
+        message,
+        code: code || undefined,
+        kind,
+        hint: hint || undefined,
+      },
+    });
+  } else {
+    const suffix = code ? chalk.gray(` [${code}]`) : '';
+    console.error(chalk.red(`✗ ${message}${suffix}`));
+    if (hint) console.error(chalk.yellow(`  ${hint}`));
+    if (flags.verbose && error instanceof Error && error.stack) {
+      console.error(chalk.gray(error.stack));
+    }
+  }
+
+  process.exitCode = 1;
 }

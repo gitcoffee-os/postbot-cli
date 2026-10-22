@@ -1,35 +1,22 @@
-import chalk from 'chalk';
-import ora from 'ora';
-import { appName, createApiClient } from '../config.js';
 import { WorkflowApi } from '@gitcoffee/postbot-sdk';
+import { appName, createApiClient } from '../config.js';
+import type { GlobalOptions } from '../cli.js';
+import { printJson } from '../output.js';
+import { printWorkflowResult } from './format.js';
 
-export async function workflowRetry(opts: {
-  executionId?: string;
-  app?: 'postbot' | 'postar';
-}) {
-  const appKey = appName(opts.app);
+export async function workflowRetry(
+  executionId: string,
+  opts: { output?: boolean },
+  global: GlobalOptions,
+): Promise<void> {
+  if (!executionId) throw new Error('缺少 executionId');
 
-  if (!opts.executionId) {
-    console.log(chalk.red('Execution ID is required'));
-    process.exit(1);
+  const client = createApiClient(appName(global.app));
+  const result = await new WorkflowApi(client).retryExecution(executionId);
+
+  if (global.json) {
+    printJson(result);
+    return;
   }
-
-  const spinner = ora('Retrying workflow...').start();
-
-  try {
-    const client = createApiClient(appKey);
-    const workflowApi = new WorkflowApi(client);
-    const result = await workflowApi.retryExecution(opts.executionId);
-
-    spinner.succeed(chalk.green('Workflow retried!'));
-
-    console.log(chalk.bold('\nResult:'));
-    console.log(chalk.gray('─'.repeat(50)));
-    console.log(`  Execution ID: ${chalk.cyan(result.executionId)}`);
-    console.log(`  Status:       ${chalk.yellow(result.status)}`);
-    console.log(chalk.gray('─'.repeat(50)));
-  } catch (error: any) {
-    spinner.fail(chalk.red(`Failed to retry workflow: ${error.message}`));
-    process.exit(1);
-  }
+  printWorkflowResult(result, { output: opts.output });
 }

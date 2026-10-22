@@ -1,42 +1,37 @@
-import chalk from 'chalk';
-import ora from 'ora';
-import { getConfig, getCurrentToken, getAppConfig, appName } from '../config.js';
 import { getUserInfo } from '@gitcoffee/postbot-sdk';
-import { classifyError, tokenHint } from '../errors.js';
+import { appName, getAppConfig, getConfig, getCurrentToken } from '../config.js';
+import type { GlobalOptions } from '../cli.js';
+import { printJson, printKeyValues, printWarning } from '../output.js';
 
-export async function whoami(opts: { app?: 'postbot' | 'postar' }) {
-  const appKey = appName(opts.app);
+export async function whoami(global: GlobalOptions): Promise<void> {
+  const appKey = appName(global.app);
   const token = getCurrentToken(appKey);
 
   if (!token) {
-    console.log(chalk.yellow(`Not logged in to ${appKey}`));
-    console.log(chalk.gray('Run: postbot login'));
+    if (global.json) {
+      printJson({ app: appKey, loggedIn: false });
+    } else {
+      printWarning(`未登录 ${appKey}。运行: postbot login`);
+    }
+    process.exitCode = 1;
     return;
   }
 
-  const spinner = ora('Fetching user info...').start();
+  const config = getConfig();
+  const appConf = getAppConfig(appKey);
+  const userInfo = await getUserInfo(config.developer.iamBaseUrl, token, appConf.appId);
 
-  try {
-    const config = getConfig();
-    const appConf = getAppConfig(appKey);
-    const userInfo = await getUserInfo(config.developer.iamBaseUrl, token, appConf.appId);
-
-    spinner.stop();
-    console.log(chalk.bold(`\nLogged in to ${appKey}:`));
-    console.log(chalk.gray('─'.repeat(40)));
-    console.log(`  Username: ${chalk.cyan(userInfo.preferred_username || userInfo.username || 'N/A')}`);
-    console.log(`  Name:     ${chalk.cyan(userInfo.name || 'N/A')}`);
-    console.log(`  Email:    ${chalk.cyan(userInfo.email || 'N/A')}`);
-    console.log(`  Mobile:   ${chalk.cyan(userInfo.phone_number || 'N/A')}`);
-    console.log(chalk.gray('─'.repeat(40)));
-  } catch (error: any) {
-    const { code } = classifyError(error);
-    const hint = tokenHint(error);
-    spinner.fail(chalk.red(`Failed to get user info: ${error.message}${code ? ` (${code})` : ''}`));
-    if (hint) {
-      console.log(chalk.yellow(hint));
-    } else {
-      console.log(chalk.yellow('Token may be expired. Run: postbot login'));
-    }
+  if (global.json) {
+    printJson({ app: appKey, loggedIn: true, user: userInfo });
+    return;
   }
+
+  printKeyValues([
+    ['应用', appKey],
+    ['用户名', userInfo.preferred_username || userInfo.username],
+    ['名称', userInfo.name || userInfo.nickname],
+    ['邮箱', userInfo.email],
+    ['手机号', userInfo.phone_number],
+    ['用户 ID', userInfo.sub || userInfo.id],
+  ]);
 }

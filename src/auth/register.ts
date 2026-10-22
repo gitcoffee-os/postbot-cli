@@ -1,45 +1,32 @@
 import inquirer from 'inquirer';
-import chalk from 'chalk';
 import ora from 'ora';
-import { getConfig, setCurrentToken, getAppConfig, appName } from '../config.js';
 import { getAppToken, proxyRegister } from '@gitcoffee/postbot-sdk';
+import { appName, getAppConfig, getConfig, setCurrentToken } from '../config.js';
+import type { GlobalOptions } from '../cli.js';
+import { printJson } from '../output.js';
 
-export async function register(opts: { username?: string; password?: string; nickname?: string; mobile?: string; app?: 'postbot' | 'postar' }) {
-  const config = getConfig();
-  const appKey = appName(opts.app);
+export interface RegisterOptions {
+  username?: string;
+  password?: string;
+  nickname?: string;
+  mobile?: string;
+  showToken?: boolean;
+}
 
-  let username = opts.username;
-  let password = opts.password;
-  let nickname = opts.nickname;
-  let mobile = opts.mobile;
+export async function register(opts: RegisterOptions, global: GlobalOptions): Promise<void> {
+  let { username, password, nickname, mobile } = opts;
 
-  if (!username || !password) {
-    const answers = await inquirer.prompt([
-      {
-        type: 'input',
-        name: 'username',
-        message: 'Username:',
-        when: !username,
-      },
-      {
-        type: 'password',
-        name: 'password',
-        message: 'Password:',
-        mask: '*',
-        when: !password,
-      },
-      {
-        type: 'input',
-        name: 'nickname',
-        message: 'Nickname (optional):',
-        when: !nickname,
-      },
-      {
-        type: 'input',
-        name: 'mobile',
-        message: 'Mobile (optional):',
-        when: !mobile,
-      },
+  if ((!username || !password) && process.stdin.isTTY && !global.json) {
+    const answers = await inquirer.prompt<{
+      username?: string;
+      password?: string;
+      nickname?: string;
+      mobile?: string;
+    }>([
+      { type: 'input', name: 'username', message: '用户名:', when: !username },
+      { type: 'password', name: 'password', message: '密码:', mask: '*', when: !password },
+      { type: 'input', name: 'nickname', message: '昵称（可选）:', when: !nickname },
+      { type: 'input', name: 'mobile', message: '手机号（可选）:', when: !mobile },
     ]);
     username = username || answers.username;
     password = password || answers.password;
@@ -48,26 +35,28 @@ export async function register(opts: { username?: string; password?: string; nic
   }
 
   if (!username || !password) {
-    console.log(chalk.red('Username and password are required'));
-    process.exit(1);
+    throw new Error('缺少 --username / --password（非交互环境必须显式传入）');
   }
 
-  const spinner = ora('Registering...').start();
+  const config = getConfig();
+  if (!config.developer.clientId || !config.developer.clientSecret) {
+    throw new Error(
+      '注册需要开发者凭证。请先运行: postbot config --client-id <id> --client-secret <secret>',
+    );
+  }
+
+  const appKey = appName(global.app);
+  const spinner = global.json ? null : ora('注册中...').start();
 
   try {
-    if (!config.developer.clientId || !config.developer.clientSecret) {
-      spinner.fail(chalk.red('Developer credentials not configured. Run: postbot config --client-id <id> --client-secret <secret>'));
-      process.exit(1);
-    }
-
-    spinner.text = 'Getting app token...';
+    spinner && (spinner.text = '获取应用令牌...');
     const appAccessToken = await getAppToken(
       config.developer.iamBaseUrl,
       config.developer.clientId,
-      config.developer.clientSecret
+      config.developer.clientSecret,
     );
 
-    spinner.text = 'Creating account...';
+    spinner && (spinner.text = '创建账号...');
     const result = await proxyRegister({
       iamBaseUrl: config.developer.iamBaseUrl,
       appAccessToken,
@@ -80,9 +69,20 @@ export async function register(opts: { username?: string; password?: string; nic
     });
 
     setCurrentToken(result.token, result.username, result.expiresIn, appKey);
-    spinner.succeed(chalk.green(`Account created and logged in as ${result.username} (${appKey})`));
-  } catch (error: any) {
-    spinner.fail(chalk.red(`Registration failed: ${error.message}`));
-    process.exit(1);
+
+    if (global.json) {
+      spinner?.stop();
+      printJson({
+        app: appKey,
+        username: result.username,
+        expiresIn: result.expiresIn,
+        ...(opts.showToken ? { token: result.token } : {}),
+      });
+      return;
+    }
+    spinner?.succeed(`注册成功并已登录: ${result.username} (${appKey})`);
+  } catch (error) {
+    spinner?.fail('注册失败');
+    throw error;
   }
 }
