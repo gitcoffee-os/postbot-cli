@@ -64,7 +64,8 @@ skipped.
 ## Notes
 
 - This package is built with **pnpm**; `release.yml` installs pnpm 9 and runs
-  `pnpm install --no-frozen-lockfile` (the repo has no lockfile yet).
+  `pnpm install --frozen-lockfile` against the committed `pnpm-lock.yaml`
+  (regenerate with `pnpm install --ignore-workspace` when dependencies change).
 - The smoke check installs the packed tarball into a temp dir and asserts
   `postbot --version` matches `package.json`.
 - `release.yml` is a reusable workflow (`workflow_call`) plus `workflow_dispatch`.
