@@ -5,7 +5,7 @@ import {
   type Platform,
   type PostbotClient,
   type TaskSaveRequest,
-} from '@gitcoffee/postbot-sdk';
+} from '@gitcoffee-os/postbot-sdk';
 import {
   CONTENT_TYPES,
   normalizePublishChannel,

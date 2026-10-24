@@ -35,13 +35,13 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - name: Build SDK
-        run: pnpm --filter @gitcoffee/postbot-sdk build
+        run: pnpm --filter @gitcoffee-os/postbot-sdk build
 
       - name: Build CLI
-        run: pnpm --filter @gitcoffee/postbot-cli build
+        run: pnpm --filter @gitcoffee-os/postbot-cli build
 
       - name: Typecheck
-        run: pnpm --filter @gitcoffee/postbot-cli typecheck
+        run: pnpm --filter @gitcoffee-os/postbot-cli typecheck
 
       - name: Test
-        run: pnpm --filter @gitcoffee/postbot-cli test
+        run: pnpm --filter @gitcoffee-os/postbot-cli test

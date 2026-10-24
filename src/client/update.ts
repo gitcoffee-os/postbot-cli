@@ -1,4 +1,4 @@
-import { ClientApi } from '@gitcoffee/postbot-sdk';
+import { ClientApi } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { loadResources, resolvePlatformRef } from '../resources.js';

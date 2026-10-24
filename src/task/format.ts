@@ -1,4 +1,4 @@
-import type { Task } from '@gitcoffee/postbot-sdk';
+import type { Task } from '@gitcoffee-os/postbot-sdk';
 import {
   formatDateTime,
   formatPlatformCodes,

@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import type { PostbotClient } from '@gitcoffee/postbot-sdk';
+import type { PostbotClient } from '@gitcoffee-os/postbot-sdk';
 import { prepareTask } from '../src/task/build.js';
 import type { ResourceBundle } from '../src/resources.js';
-import type { Platform } from '@gitcoffee/postbot-sdk';
+import type { Platform } from '@gitcoffee-os/postbot-sdk';
 
 const weixin: Platform = {
   id: 1,

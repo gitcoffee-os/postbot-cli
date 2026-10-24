@@ -18,8 +18,8 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/gitcoffee-os/gitcoffee-os.git
-cd gitcoffee-os
+git clone https://github.com/gitcoffee-os/postbot-cli.git
+cd postbot-cli
 
 # 安装依赖
 pnpm install
@@ -62,7 +62,7 @@ packages/sdk/postbot-sdk/  通用 SDK
 - 使用 TypeScript，严格模式
 - 遵循现有代码风格
 - 不要在源码中添加个人/内部标识信息
-- 所有 API 调用通过 `@gitcoffee/postbot-sdk` 完成
+- 所有 API 调用通过 `@gitcoffee-os/postbot-sdk` 完成
 
 ### 提交 Pull Request
 
@@ -85,7 +85,7 @@ packages/sdk/postbot-sdk/  通用 SDK
 
 ## 报告 Bug
 
-请通过 [GitHub Issues](https://github.com/gitcoffee-os/gitcoffee-os/issues) 提交，并包含：
+请通过 [GitHub Issues](https://github.com/gitcoffee-os/postbot-cli/issues) 提交，并包含：
 
 - 运行环境（操作系统、Node.js 版本）
 - 复现步骤

@@ -1,4 +1,4 @@
-import { FingerprintApi, type MediaAccountFingerprint } from '@gitcoffee/postbot-sdk';
+import { FingerprintApi, type MediaAccountFingerprint } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import { confirmAction, parseInteger, type GlobalOptions } from '../cli.js';
 import { formatDateTime, printCancelled, printHeading, printJson, printKeyValues, printSuccess } from '../output.js';

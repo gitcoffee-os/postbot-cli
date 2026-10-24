@@ -1,4 +1,4 @@
-import { getUserInfo } from '@gitcoffee/postbot-sdk';
+import { getUserInfo } from '@gitcoffee-os/postbot-sdk';
 import { appName, getAppConfig, getConfig, getCurrentToken } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { printJson, printKeyValues, printWarning } from '../output.js';

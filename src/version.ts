@@ -18,4 +18,4 @@ const pkg = readPackageJson();
 
 /** CLI 版本：直接读取 package.json，避免与发布版本脱节 */
 export const VERSION = pkg.version ?? '0.0.0';
-export const PACKAGE_NAME = pkg.name ?? '@gitcoffee/postbot-cli';
+export const PACKAGE_NAME = pkg.name ?? '@gitcoffee-os/postbot-cli';

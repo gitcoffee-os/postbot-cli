@@ -1,4 +1,4 @@
-import { SessionApi } from '@gitcoffee/postbot-sdk';
+import { SessionApi } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { formatDateTime, printJson, printTable } from '../output.js';

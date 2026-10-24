@@ -45,10 +45,10 @@
 
 ```bash
 # 全局安装
-npm install -g @gitcoffee/postbot-cli
+npm install -g @gitcoffee-os/postbot-cli
 
 # 或 pnpm
-pnpm add -g @gitcoffee/postbot-cli
+pnpm add -g @gitcoffee-os/postbot-cli
 ```
 
 要求 Node.js >= 18。

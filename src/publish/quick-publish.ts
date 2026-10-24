@@ -1,5 +1,5 @@
 import ora from 'ora';
-import { WorkflowApi } from '@gitcoffee/postbot-sdk';
+import { WorkflowApi } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { TERMINAL_TASK_STATUSES } from '../constants.js';

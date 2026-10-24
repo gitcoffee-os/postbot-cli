@@ -1,4 +1,4 @@
-import { AutoPublishApi, WorkflowApi, type AutoPublishJob, type AutoPublishLog } from '@gitcoffee/postbot-sdk';
+import { AutoPublishApi, WorkflowApi, type AutoPublishJob, type AutoPublishLog } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { formatDateTime, printHeading, printJson, printKeyValues, printTable, printWarning } from '../output.js';

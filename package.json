@@ -1,5 +1,5 @@
 {
-  "name": "@gitcoffee/postbot-cli",
+  "name": "@gitcoffee-os/postbot-cli",
   "version": "1.1.0",
   "description": "PostBot & Postar CLI - Content publishing and task management tool",
   "type": "module",
@@ -8,16 +8,20 @@
     "postar": "./bin/postar.js"
   },
   "main": "./dist/index.js",
+  "files": [
+    "dist",
+    "bin",
+    "README.md"
+  ],
   "license": "Apache-2.0",
-  "author": "GitCoffee Team (https://gitcoffee.com)",
+  "author": "GitCoffee Team (https://gitcoffee.exmay.com)",
   "homepage": "https://postbot.exmay.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/gitcoffee-os/gitcoffee-os.git",
-    "directory": "apps/postbot-cli"
+    "url": "https://github.com/gitcoffee-os/postbot-cli.git"
   },
   "bugs": {
-    "url": "https://github.com/gitcoffee-os/gitcoffee-os/issues"
+    "url": "https://github.com/gitcoffee-os/postbot-cli/issues"
   },
   "keywords": [
     "postbot",
@@ -38,7 +42,7 @@
     "prepublishOnly": "pnpm build"
   },
   "dependencies": {
-    "@gitcoffee/postbot-sdk": "^1.0.0",
+    "@gitcoffee-os/postbot-sdk": "^1.0.0",
     "chalk": "^5.3.0",
     "commander": "^12.1.0",
     "conf": "^13.0.0",

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { NotifyApi } from '@gitcoffee/postbot-sdk';
+import { NotifyApi } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import { parseJsonInput, type GlobalOptions } from '../cli.js';
 import { printJson, printSuccess } from '../output.js';

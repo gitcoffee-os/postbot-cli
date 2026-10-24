@@ -7,7 +7,7 @@ import {
   type MediaClient,
   type Platform,
   type PostbotClient,
-} from '@gitcoffee/postbot-sdk';
+} from '@gitcoffee-os/postbot-sdk';
 import {
   CLIENT_ONLINE_WINDOW_MS,
   type ContentType,

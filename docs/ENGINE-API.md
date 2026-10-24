@@ -1,6 +1,6 @@
 # PostBot Engine API 对接说明
 
-本文记录 `@gitcoffee/postbot-cli` 实际使用的 `exmay-postbot-engine` 接口、字段和行为差异。实现位于 `packages/sdk/postbot-sdk`，CLI 只负责参数解析、预检和展示。
+本文记录 `@gitcoffee-os/postbot-cli` 实际使用的 `exmay-postbot-engine` 接口、字段和行为差异。实现位于 `packages/sdk/postbot-sdk`，CLI 只负责参数解析、预检和展示。
 
 ## 1. 连接与认证
 

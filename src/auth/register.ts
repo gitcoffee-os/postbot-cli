@@ -1,6 +1,6 @@
 import inquirer from 'inquirer';
 import ora from 'ora';
-import { getAppToken, proxyRegister } from '@gitcoffee/postbot-sdk';
+import { getAppToken, proxyRegister } from '@gitcoffee-os/postbot-sdk';
 import { appName, getAppConfig, getConfig, setCurrentToken } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { printJson } from '../output.js';

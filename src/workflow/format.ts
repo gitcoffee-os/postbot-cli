@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import type { WorkflowExecutionResult } from '@gitcoffee/postbot-sdk';
+import type { WorkflowExecutionResult } from '@gitcoffee-os/postbot-sdk';
 import { printHeading, printJson, printKeyValues, printTable } from '../output.js';
 
 export function printWorkflowResult(

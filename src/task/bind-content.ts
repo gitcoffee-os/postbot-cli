@@ -1,6 +1,6 @@
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
-import { TaskApi } from '@gitcoffee/postbot-sdk';
+import { TaskApi } from '@gitcoffee-os/postbot-sdk';
 import { printJson, printSuccess } from '../output.js';
 
 /**

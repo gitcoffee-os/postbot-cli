@@ -1,4 +1,4 @@
-import { AccountApi, PlatformApi, type Account } from '@gitcoffee/postbot-sdk';
+import { AccountApi, PlatformApi, type Account } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { formatDateTime, printJson, printTable } from '../output.js';

@@ -1,5 +1,5 @@
 import chalk from 'chalk';
-import { IamApiError } from '@gitcoffee/postbot-sdk';
+import { IamApiError } from '@gitcoffee-os/postbot-sdk';
 import { getRuntimeFlags, printJson } from './output.js';
 
 /** 错误归类（对应后端分级错误码前缀，见 IAM ERROR_CODE.md） */

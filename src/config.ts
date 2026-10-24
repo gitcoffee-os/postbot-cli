@@ -1,7 +1,7 @@
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
-import { PostbotClient } from '@gitcoffee/postbot-sdk';
+import { PostbotClient } from '@gitcoffee-os/postbot-sdk';
 
 export interface AppConfig {
   currentApp: 'postbot' | 'postar';

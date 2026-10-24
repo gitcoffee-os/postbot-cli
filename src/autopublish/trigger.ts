@@ -1,5 +1,5 @@
 import ora from 'ora';
-import { AutoPublishApi, TaskApi } from '@gitcoffee/postbot-sdk';
+import { AutoPublishApi, TaskApi } from '@gitcoffee-os/postbot-sdk';
 import { appName, createApiClient } from '../config.js';
 import type { GlobalOptions } from '../cli.js';
 import { printJson, printSuccess } from '../output.js';
