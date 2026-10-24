@@ -6,7 +6,7 @@ Commits 自动开 Release PR，合并后自动发布到 npm。
 
 ## 一次性引导（bootstrap）
 
-`@gitcoffee-os/postbot-cli@1.1.0` 已作为 baseline 记录在
+`@gitcoffee-os/postbot-cli@1.0.0` 已作为 baseline 记录在
 `.release-please-manifest.json`。首次发布需要人工推送一次 tag：
 
 1. 在 GitHub 仓库 **Settings → Secrets and variables → Actions → Repository
@@ -18,13 +18,13 @@ Commits 自动开 Release PR，合并后自动发布到 npm。
    ```bash
    git add .github/workflows release-please-config.json .release-please-manifest.json RELEASING.md CONTRIBUTING.md
    git commit -m "ci: automate releases with release-please"
-   git tag v1.1.0
+   git tag v1.0.0
    git push origin main --follow-tags
    ```
 
    Then run **Actions → Publish → Run workflow** once. It publishes
-   `@gitcoffee-os/postbot-cli@1.1.0` and creates the GitHub Release. Because the
-   `v1.1.0` tag already exists at `main`, release-please treats 1.1.0 as the
+   `@gitcoffee-os/postbot-cli@1.0.0` and creates the GitHub Release. Because the
+   `v1.0.0` tag already exists at `main`, release-please treats 1.0.0 as the
    baseline and will not propose a spurious bump.
 
 3. **Optional, recommended after the first publish** — configure
@@ -39,9 +39,9 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 
 | Commit | Release |
 | --- | --- |
-| `fix: …` | patch (1.1.0 → 1.1.1) |
-| `feat: …` | minor (1.1.0 → 1.2.0) |
-| `feat!: …` or `BREAKING CHANGE:` footer | major (1.1.0 → 2.0.0) |
+| `fix: …` | patch (1.0.0 → 1.0.1) |
+| `feat: …` | minor (1.0.0 → 1.2.0) |
+| `feat!: …` or `BREAKING CHANGE:` footer | major (1.0.0 → 2.0.0) |
 | `chore:` / `ci:` / `docs:` / `test:` | no release |
 
 Then:
