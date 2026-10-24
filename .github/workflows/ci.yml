@@ -40,3 +40,21 @@ jobs:
 
       - name: Build
         run: pnpm run build
+
+  install-script:
+    name: install.sh lint & smoke
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Shellcheck
+        run: shellcheck -s bash install.sh
+
+      - name: Smoke test
+        # The installer itself verifies `postbot --version` before exiting 0.
+        run: bash install.sh

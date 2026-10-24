@@ -44,14 +44,20 @@
 ## 安装
 
 ```bash
-# 全局安装
+# 一键安装（自动检测 Node.js 环境，通过 npm 全局安装）
+curl -fsSL https://raw.githubusercontent.com/gitcoffee-os/postbot-cli/main/install.sh | bash
+
+# 指定版本
+curl -fsSL https://raw.githubusercontent.com/gitcoffee-os/postbot-cli/main/install.sh | bash -s -- --version 1.1.0
+
+# 或直接全局安装
 npm install -g @gitcoffee-os/postbot-cli
 
 # 或 pnpm
 pnpm add -g @gitcoffee-os/postbot-cli
 ```
 
-要求 Node.js >= 18。
+要求 Node.js >= 18。安装脚本会检测 Node 版本；若 npm 全局目录无写权限，自动改用 `~/.postbot` 作为用户级安装目录并提示 PATH 配置。
 
 ## 快速开始
 
