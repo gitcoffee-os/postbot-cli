@@ -3,45 +3,40 @@ name: CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'apps/postbot-cli/**'
-      - 'packages/sdk/postbot-sdk/**'
   pull_request:
     branches: [main]
-    paths:
-      - 'apps/postbot-cli/**'
-      - 'packages/sdk/postbot-sdk/**'
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     strategy:
       matrix:
-        node-version: [18, 20, 22]
+        node-version: [20, 22, 24]
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
         with:
-          version: 8
+          version: 9
 
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
-
-      - name: Build SDK
-        run: pnpm --filter @gitcoffee-os/postbot-sdk build
-
-      - name: Build CLI
-        run: pnpm --filter @gitcoffee-os/postbot-cli build
+      - run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck
-        run: pnpm --filter @gitcoffee-os/postbot-cli typecheck
+        run: pnpm run typecheck
 
       - name: Test
-        run: pnpm --filter @gitcoffee-os/postbot-cli test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm run build

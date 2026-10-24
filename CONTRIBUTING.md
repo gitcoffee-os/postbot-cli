@@ -74,14 +74,13 @@ packages/sdk/postbot-sdk/  通用 SDK
 
 ### 提交信息格式
 
-参考 [Conventional Commits](https://www.conventionalcommits.org/)：
+参考 [Conventional Commits](https://www.conventionalcommits.org/)，
+发布由 release-please 自动生成版本号、CHANGELOG 和 tag：
 
-- `feat:` 新功能
-- `fix:` Bug 修复
-- `docs:` 文档变更
-- `refactor:` 代码重构
-- `test:` 测试相关
-- `chore:` 构建/工具链变更
+- `fix:` → patch，`feat:` → minor，`feat!:` / `BREAKING CHANGE:` → major
+- `chore:` / `ci:` / `docs:` / `test:` 不触发发布
+
+不要手动修改 `package.json` 的 `version` 或 `CHANGELOG.md`，详见 [RELEASING.md](RELEASING.md)。
 
 ## 报告 Bug
 

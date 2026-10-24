@@ -1,0 +1,124 @@
+name: Publish
+
+# Triggered by:
+#   - a human pushing a v* tag (bootstrap / break-glass)
+#   - release-please.yml when a release is created
+#   - manual dispatch
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_call:
+    secrets:
+      NPM_TOKEN:
+        required: true
+  workflow_dispatch:
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # needed to create the bootstrap tag/release
+      id-token: write # required for npm provenance
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Node 24 ships npm 11, which supports both provenance and npm
+          # Trusted Publishing (no long-lived token needed).
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+
+      - name: Read version and check npm
+        id: meta
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "@gitcoffee-os/postbot-cli@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify release tag exists
+        if: github.event_name != 'workflow_dispatch' && steps.meta.outputs.published == 'false'
+        run: |
+          git fetch --tags --force
+          if ! git rev-parse --verify "refs/tags/v${{ steps.meta.outputs.version }}" >/dev/null 2>&1; then
+            echo "::error::Tag v${{ steps.meta.outputs.version }} does not exist; refusing to publish an untagged version"
+            exit 1
+          fi
+
+      - name: Typecheck
+        if: steps.meta.outputs.published == 'false'
+        run: pnpm run typecheck
+
+      - name: Test
+        if: steps.meta.outputs.published == 'false'
+        run: pnpm test
+
+      - name: Build
+        if: steps.meta.outputs.published == 'false'
+        run: pnpm run build
+
+      - name: Validate package contents and CLI binary
+        if: steps.meta.outputs.published == 'false'
+        run: |
+          npm pack --dry-run
+          TARBALL="$(npm pack --silent)"
+          TMP_DIR="$(mktemp -d)"
+          cd "$TMP_DIR"
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE/$TARBALL" --ignore-scripts --no-audit --no-fund
+          GOT="$(npx --no-install postbot --version)"
+          if [ "$GOT" != "${{ steps.meta.outputs.version }}" ]; then
+            echo "::error::postbot --version returned '$GOT', expected '${{ steps.meta.outputs.version }}'"
+            exit 1
+          fi
+          echo "CLI smoke ok: postbot --version -> $GOT"
+
+      - name: Publish to npm
+        if: steps.meta.outputs.published == 'false'
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --provenance --access public
+
+      - name: Ensure tag and GitHub Release exist (bootstrap)
+        if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${{ steps.meta.outputs.version }}"
+          git fetch --tags --force
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "GitHub Release v$VERSION already exists."
+          elif git rev-parse --verify "refs/tags/v$VERSION" >/dev/null 2>&1; then
+            gh release create "v$VERSION" --title "v$VERSION" --generate-notes
+          else
+            gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes
+          fi
+
+      - name: Already published
+        if: steps.meta.outputs.published == 'true'
+        run: |
+          echo "::notice::@gitcoffee-os/postbot-cli@${{ steps.meta.outputs.version }} is already on npm; nothing to publish."
