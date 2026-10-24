@@ -89,6 +89,8 @@ if ! npm install -g "$SPEC" </dev/null; then
     die "npm install failed. Try manually: npm install -g ${SPEC}"
   fi
 
+  # Intentional: write literal $HOME into the rc file so it expands at shell startup.
+  # shellcheck disable=SC2016
   PATH_LINE='export PATH="$HOME/.postbot/bin:$PATH"'
   case "${SHELL:-}" in
     */zsh) RC_FILE="$HOME/.zshrc" ;;

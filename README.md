@@ -43,17 +43,22 @@
 
 ## 安装
 
+一键安装（自动检测 Node.js 环境，通过 npm 全局安装）：
+
 ```bash
-# 一键安装（自动检测 Node.js 环境，通过 npm 全局安装）
 curl -fsSL https://raw.githubusercontent.com/gitcoffee-os/postbot-cli/main/install.sh | bash
+```
 
-# 指定版本
+安装指定版本：
+
+```bash
 curl -fsSL https://raw.githubusercontent.com/gitcoffee-os/postbot-cli/main/install.sh | bash -s -- --version 1.1.0
+```
 
-# 或直接全局安装
+或直接使用 npm / pnpm：
+
+```bash
 npm install -g @gitcoffee-os/postbot-cli
-
-# 或 pnpm
 pnpm add -g @gitcoffee-os/postbot-cli
 ```
 
